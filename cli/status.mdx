@@ -1,0 +1,64 @@
+---
+title: "sesame status — View Device Fingerprint and Tokens"
+sidebarTitle: "Status"
+description: "sesame status displays your device fingerprint, registered agents, and current JWT state. Use it to verify your device is registered and tokens are valid."
+---
+
+`sesame status` is your first debugging tool — it gives you an instant summary of whether your device is registered with the broker, which agents are active, and whether your JWT is still valid or needs refreshing. Run it any time something looks wrong before diving deeper.
+
+```bash
+sesame status
+```
+
+## Example output
+
+```
+Device fingerprint: a3:b7:c2:d1:e9:f4:08:3a:bb:12:cd:45:ef:67:89:ab
+Registered agents:  3
+Active agent:       agent_01jxk2m9p4qr  (default)
+                    agent_01jxm7r3t8wn
+                    agent_01jxp9s5u2vq
+Token state:        valid (expires in 23h 14m)
+Broker endpoint:    https://broker.getsesame.dev
+CLI version:        0.9.4
+```
+
+## Output fields
+
+<Accordion title="Device fingerprint">
+  A colon-separated hex representation of the SHA-256 digest of your device's Ed25519 public key. Use this to identify your device in the Sesame dashboard or when contacting support.
+</Accordion>
+
+<Accordion title="Registered agents">
+  The total number of agent identities registered on this device. Each agent has its own keypair and JWT. Use `sesame login --new` to add more agents, and `sesame switch <agent-id>` to change which one is active for the current shell.
+</Accordion>
+
+<Accordion title="Active agent">
+  The agent identity currently used by `sesame request`. The agent marked `(default)` is the one set at login time. You can change it temporarily with `sesame switch <agent-id>`.
+</Accordion>
+
+<Accordion title="Token state">
+  Whether the active agent's JWT is `valid`, `expiring soon`, or `expired`, along with the remaining lifetime. Tokens are valid for 24 hours by default and can be renewed with `sesame refresh`.
+</Accordion>
+
+## When to run `sesame status`
+
+- **After `sesame login`** — confirm the registration succeeded and your device fingerprint matches what the Sesame dashboard shows.
+- **When requests fail with auth errors** — check whether your token has expired or your agent has been deactivated in the dashboard.
+- **After `sesame switch <agent-id>`** — verify the active agent changed to the one you expected.
+- **Before starting a long-running agent session** — make sure tokens are fresh enough to last the session, or run `sesame refresh` first.
+
+<Tip>
+  If `sesame status` shows `Token state: expired`, run `sesame refresh` to get a new JWT via challenge-response with your device key. No browser interaction required.
+</Tip>
+
+## CLI version
+
+To print only the CLI version without the full status output, use:
+
+```bash
+sesame --version
+# sesame version 0.9.4 (darwin/arm64)
+```
+
+This is useful for bug reports and confirming that an upgrade took effect.

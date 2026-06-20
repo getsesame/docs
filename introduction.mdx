@@ -1,0 +1,85 @@
+---
+title: "Sesame: Zero-Trust Credential Broker for AI Agents"
+sidebarTitle: "Introduction"
+description: "Sesame brokers API calls for AI agents so credentials are injected server-side — secrets never reach agent prompts, memory, or logs."
+---
+
+Sesame is a zero-trust credential broker that sits between your AI agents and upstream APIs. Instead of handing secrets to an agent directly, you keep them locked in Sesame's vault and let the broker inject the right `Authorization` header on every outgoing request — your agent sees only the response.
+
+## The problem with credentials today
+
+Every common approach to giving an AI agent API access creates a leak surface:
+
+- **Environment variables** are visible to every process on the machine and end up in crash dumps, shell history, and CI logs.
+- **Tool arguments** pass secrets through the agent's context window, where they can be echoed in reasoning traces, summaries, or tool-call transcripts.
+- **MCP config files** store credentials on disk in plaintext, shared across all sessions and every model that reads the config.
+
+Once a secret reaches an agent's context, you have no way to know where it goes next. Sesame removes the secret from the equation entirely.
+
+## How Sesame fixes this
+
+When an agent needs to call an API, it runs `sesame request` instead of `curl`. Sesame verifies the agent's cryptographic identity, checks your approval policy, fetches the matching credential from the vault, injects it as an HTTP header, and forwards the request — all server-side. The agent never sees the key.
+
+```
+Agent → sesame request POST https://api.anthropic.com/… → Sesame Broker → api.anthropic.com
+                                                                ↑
+                                                    Credential injected here
+```
+
+## Key capabilities
+
+- **70+ provider integrations** — Anthropic, OpenAI, GitHub, Stripe, Slack, and more, with credentials stored and rotated in Sesame's vault.
+- **Human-in-the-loop approval** — the first time an agent targets a new hostname, the request pauses until you tap **Approve** in the Sesame app or via Telegram.
+- **Tamper-evident audit logs** — every proxied request, approval, and revocation is logged with credential values redacted.
+- **Instant revocation** — deactivate an agent from the dashboard and all its grants are invalidated immediately.
+- **MCP support** — integrates with Model Context Protocol so MCP-based agents can use brokered credentials without config changes.
+- **Enterprise self-hosting** — deploy the broker inside your own AWS VPC with credentials stored in AWS Secrets Manager.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Install the CLI, register your device, and make your first brokered request in under five minutes.
+  </Card>
+  <Card
+    title="How It Works"
+    icon="shield-halved"
+    href="/how-it-works"
+  >
+    Understand the Ed25519 identity model and server-side credential injection flow.
+  </Card>
+  <Card
+    title="CLI: Login & Devices"
+    icon="terminal"
+    href="/cli/login"
+  >
+    Learn how device registration, keypair generation, and JWT issuance work.
+  </Card>
+  <Card
+    title="Agent Skills"
+    icon="puzzle-piece"
+    href="/skills/overview"
+  >
+    Install pre-built skills so your agents call Sesame automatically.
+  </Card>
+  <Card
+    title="Provider Integrations"
+    icon="plug"
+    href="/integrations/providers"
+  >
+    Browse 70+ supported providers with one-click credential setup.
+  </Card>
+  <Card
+    title="Zero-Trust Security Model"
+    icon="lock"
+    href="/security/zero-trust"
+  >
+    Read the threat model, trust boundaries, and compliance considerations.
+  </Card>
+</CardGroup>
+
+<Note>
+  Sesame is currently **pre-1.0 / alpha**. Interfaces, CLI flags, and API shapes may change between releases. Pin a specific version in production environments and watch the [changelog](https://getsesame.dev/changelog) for breaking changes.
+</Note>

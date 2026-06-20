@@ -1,0 +1,70 @@
+---
+title: "Human Approval Flow for First-Time Agent API Requests"
+sidebarTitle: "Approval Flow"
+description: "Sesame requires your approval the first time an agent accesses any new hostname. Approve or deny via the dashboard or Telegram in real time."
+---
+
+Every time one of your agents targets a hostname it has never accessed before, Sesame blocks the request and sends you a real-time notification before injecting any credential. You review the hostname, HTTP method, and path pattern, then tap Approve or Deny — giving you a human checkpoint before any secret is ever shared. The agent's request stays pending until you respond.
+
+## How the Approval Flow Works
+
+<Steps>
+  <Step title="Agent makes a request">
+    Your agent calls `sesame request POST https://api.example.com/v1/endpoint`. The Sesame CLI forwards the request to the broker along with the agent's EdDSA JWT.
+  </Step>
+  <Step title="Broker checks for an existing policy">
+    The broker verifies the JWT, confirms the agent is active, and looks up whether an approved policy already exists for `api.example.com` scoped to this agent.
+  </Step>
+  <Step title="No policy found — notification sent">
+    If no matching policy exists, the broker holds the request and immediately sends you an approval notification via the Sesame mobile app or Telegram, whichever you have configured.
+  </Step>
+  <Step title="You review the request">
+    The notification shows you the target hostname, the HTTP method, and the requested path pattern. You have everything you need to make an informed decision before any credential moves.
+  </Step>
+  <Step title="You approve or deny">
+    Tap **Approve** to allow the request, or **Deny** to reject it. Your response is recorded in the audit log immediately.
+  </Step>
+  <Step title="Approved — credential injected and request forwarded">
+    If you approve, the broker retrieves the credential from its vault, injects it as an `Authorization` header, and forwards the request to the target API. The approved policy is cached so future requests to the same hostname matching the same pattern are handled automatically.
+  </Step>
+  <Step title="Denied — agent receives an error">
+    If you deny, the broker returns an error to the agent. No credential is accessed. The denial is recorded in the audit log with a timestamp.
+  </Step>
+</Steps>
+
+## Notification Channels
+
+Sesame supports two channels for real-time approval notifications. Configure one or both in your account settings.
+
+<CardGroup cols={2}>
+  <Card title="Sesame Mobile App" icon="mobile" href="/integrations/providers">
+    Receive push notifications on iOS or Android via the Sesame app. Approve or deny directly from the notification without opening the dashboard.
+  </Card>
+  <Card title="Telegram" icon="telegram" href="/integrations/providers">
+    Connect a Telegram bot to your account and receive approval requests in any chat or channel. Ideal if you spend your day in Telegram and want approvals inline with your workflow.
+  </Card>
+</CardGroup>
+
+## Scoped Policies and Auto-Approval
+
+<Note>
+  Once you approve a hostname, Sesame lets you configure a **scoped policy** for it — a set of permitted HTTP methods and URL path patterns specific to that agent. Future requests that match the policy are auto-approved without interrupting you. Any request that falls outside the policy — a new method, a different path prefix, a previously unseen endpoint — is routed back to you for explicit approval. This keeps automation fast for expected behavior while preserving a human checkpoint for anything unexpected.
+</Note>
+
+## Auto-Expiring Access (JIT Provisioning)
+
+Approved credentials are provisioned just-in-time and expire automatically after a short window measured in minutes, not months. This limits the blast radius of any single approval: even if an agent is later compromised, its active credential expires quickly. You are never granting permanent access when you tap Approve — you are granting a tightly scoped, short-lived pass for the task at hand.
+
+## Frequently Asked Questions
+
+<Accordion title="What if I don't respond to an approval request?">
+  The request stays blocked indefinitely until you either approve or deny it. The agent will wait, and the connection will eventually time out on the client side if you take no action. No credential is injected while the request is pending.
+</Accordion>
+
+<Accordion title="Can I approve all requests from an agent without per-hostname approval?">
+  Yes. You can configure a broad policy in the Sesame dashboard that covers all hostnames or a wide path pattern for a given agent. Any request matching that policy is auto-approved without sending you a notification. Use this for trusted agents in controlled environments where per-request approval would create too much friction.
+</Accordion>
+
+<Accordion title="How do I set up Telegram notifications?">
+  Navigate to **Settings** in the Sesame dashboard and enter your Telegram bot token and the chat ID where you want to receive approval requests. Sesame will send a test message to confirm the connection. You can disconnect Telegram at any time from the same settings page — removing the integration does not affect your existing policies or approval history.
+</Accordion>

@@ -1,0 +1,59 @@
+---
+title: "Zero-Trust Architecture: How Sesame Protects Your Secrets"
+sidebarTitle: "Zero-Trust"
+description: "Sesame's zero-trust model keeps credentials out of agent reach by injecting secrets at the broker level — never in prompts, env vars, or tool arguments."
+---
+
+Sesame's core security guarantee is simple: your AI agent never sees the credential. Instead of handing secrets to agents and hoping they stay contained, Sesame acts as a broker that intercepts every outbound API call, resolves the required credential from its vault, injects it at the network level, and forwards only the response body back to the agent — the secret itself never touches agent memory, logs, or context windows.
+
+## The Three Leak Surfaces Sesame Eliminates
+
+Most credential leaks in AI systems happen at one of three well-known surfaces. Sesame is designed to close all three.
+
+<Warning>
+  **Common credential leak surfaces in AI agent systems:**
+
+  1. **Environment variables** — Secrets passed via `ENV` are trivially exposed through log output, prompt injection attacks, or a simple `printenv` call inside the agent's execution environment.
+  2. **Tool arguments** — Credentials passed as tool call arguments live in the agent's context window. A sufficiently crafted user prompt can cause the model to echo them back verbatim.
+  3. **MCP servers with baked-in credentials** — An agent that can read its own configuration file can read any credentials stored there, regardless of file permissions.
+</Warning>
+
+Sesame eliminates all three surfaces by design. Your agent passes only a hostname reference to the `sesame request` command — it never receives, stores, or transmits the credential itself. The broker resolves the right secret from AWS Secrets Manager, injects it as an `Authorization` header, and returns only the HTTP response body. At no point does the credential value travel through the agent process.
+
+## Cryptographic Device Identity
+
+Every Sesame agent is tied to a cryptographic identity established at login — not a shared password or static API key, but an asymmetric keypair.
+
+- **Ed25519 keypair generated on-device** — A fresh Ed25519 keypair is generated locally when the agent authenticates for the first time.
+- **Private key never transmitted** — The private key is stored only on the device and is never sent to the broker under any circumstances.
+- **Challenge-response authentication** — To prove its identity, the device goes through a challenge-response flow: the broker sends a random nonce, the device signs it with the private key, and the broker verifies the signature against the stored public key.
+- **Scoped access JWT issued** — On successful verification, the broker issues an EdDSA JWT scoped to that specific device. This token accompanies every subsequent `sesame request` call.
+
+Because the JWT is derived from a keypair the broker never has full possession of, stolen tokens from one device cannot be replayed from another.
+
+## Per-Hostname Policies
+
+Sesame enforces access control at the hostname level. For every agent, you define which HTTP methods and URL path patterns are permitted for each target API. Requests that match a policy are handled automatically. Requests that fall outside any defined policy are held for human approval before any credential is injected.
+
+This means a compromised or misbehaving agent cannot silently pivot to a new API endpoint — Sesame will block the request and notify you before anything is sent.
+
+## The Four Pillars of Sesame's Security Model
+
+<CardGroup cols={2}>
+  <Card title="Cryptographic Identity" icon="key" href="/security/zero-trust">
+    Every agent authenticates via Ed25519 challenge-response. The private key never leaves the device, and the broker issues a scoped EdDSA JWT that proves identity on every request.
+  </Card>
+  <Card title="Hostname Policies" icon="shield-halved" href="/cli/hostnames">
+    Per-agent, per-hostname rules define exactly which HTTP methods and path patterns are permitted. Anything outside the policy is blocked until you explicitly approve it.
+  </Card>
+  <Card title="JIT Approval" icon="bell" href="/security/approval-flow">
+    The first time an agent targets a new hostname, Sesame blocks the request and notifies you in real time. You approve or deny before any credential is ever injected.
+  </Card>
+  <Card title="Instant Revocation" icon="ban" href="/security/revocation">
+    Deactivate an agent, remove a single approval, or delete the IAM role entirely. Because Sesame verifies the JWT on every request, revocation takes effect immediately — no key rotation required.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Want to understand exactly what happens when an agent hits a new hostname for the first time? See [Human Approval Flow](/security/approval-flow) for a step-by-step walkthrough of the just-in-time approval process.
+</Tip>

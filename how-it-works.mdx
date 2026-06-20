@@ -1,0 +1,123 @@
+---
+title: "Inside Sesame: Zero-Trust Credential Broker Architecture"
+sidebarTitle: "How It Works"
+description: "Learn how Sesame uses Ed25519 cryptographic identity and server-side credential injection to keep your API secrets out of agent reach."
+---
+
+Sesame creates a secure perimeter where API credentials are resolved at the broker, never passed to the agent. Your agent proves who it is with a cryptographic signature, the broker verifies that proof and enforces your policy, and only then does the broker attach the right secret and forward the request. The secret never crosses back to the agent side of the wire.
+
+## Two-phase request flow
+
+The full flow has two phases: an initial registration handshake that issues a device identity token, and the per-request verification that happens on every subsequent call.
+
+```
+   Agent device                Sesame Broker                  Upstream API
+   [On login / refresh]
+     │  ┌── challenge: nonce ───┤
+     │◄─────────────────────────┤
+     │  ── sign nonce with ────►│
+     │     device Ed25519 priv  │  ┌── verify signature
+     │                          │  └── issue access JWT (EdDSA)
+     │◄─────────────────────────┤
+
+   [On every authenticated request]
+     │  sesame request POST … + JWT
+     ├─────────────────────────►│  ┌── 1. verify JWT sig (EdDSA)
+     │                          │  ├── 2. check agent is active
+     │                          │  ├── 3. look up policy
+     │                          │  ├── 4. approve (first time per host)
+     │                          │  └── 5. inject Auth header
+     │                          ├───────────────────────────────►│
+     │                          │◄───────────────────────────────┤
+     │◄─────────────────────────┤
+```
+
+---
+
+## Device registration
+
+When you run `sesame login`, the CLI generates an **Ed25519 keypair** locally. The private key is written to your device's keychain or a locked file on disk — it never leaves your machine, is never transmitted to Sesame's servers, and is never visible to any agent process.
+
+Registration then proceeds through a challenge-response handshake:
+
+1. The broker sends a **nonce** (a single-use random value) to the CLI.
+2. The CLI signs the nonce with the device's Ed25519 private key and returns the signature.
+3. The broker verifies the signature against the public key you submitted during account claim.
+4. On success, the broker issues a short-lived **JWT signed with EdDSA**. The CLI stores this token and refreshes it automatically before it expires.
+
+Because identity is proved by signature rather than by a shared secret, there is no password or API key for an attacker to steal from the registration exchange.
+
+---
+
+## Per-request flow
+
+Every call to `sesame request` attaches the device JWT to the outgoing request. The broker performs five checks before it forwards anything to the upstream API:
+
+| Step | What the broker does |
+|------|----------------------|
+| 1. Verify JWT signature | Confirms the JWT was issued by Sesame and has not been tampered with. Rejects expired tokens. |
+| 2. Check agent is active | Looks up the device record. If the device has been deactivated, the request is rejected immediately. |
+| 3. Look up policy | Reads the per-hostname policy for this agent: allowed HTTP methods, permitted path patterns, and any rate limits. |
+| 4. Approve (first time per host) | If this agent has never accessed this hostname before, the broker pauses the request and sends you an approval prompt via the Sesame app or Telegram. The request proceeds only after you tap **Approve**. |
+| 5. Inject Auth header | Fetches the stored credential from the vault and attaches it as an `Authorization` header. The agent never sees this value. |
+
+Once all five checks pass, the broker proxies the request to the upstream API and streams the response back to the agent.
+
+---
+
+## What the broker enforces
+
+<CardGroup cols={2}>
+  <Card
+    title="Cryptographic Identity"
+    icon="key"
+    href="/security/zero-trust"
+  >
+    Every request is signed by the device's Ed25519 private key, which never leaves the device. There are no shared passwords or static bearer tokens that could be copied and reused elsewhere.
+  </Card>
+  <Card
+    title="Per-Hostname Policy"
+    icon="shield-check"
+    href="/security/zero-trust"
+  >
+    Each agent's vault entry specifies which HTTP methods and URL path patterns are permitted for a given hostname. Requests that fall outside the policy are rejected before the credential is ever fetched.
+  </Card>
+  <Card
+    title="Just-in-Time Approval"
+    icon="bell"
+    href="/security/zero-trust"
+  >
+    The first request to any new hostname blocks until you explicitly approve it. This prevents a compromised agent from silently expanding its own API access without your knowledge.
+  </Card>
+  <Card
+    title="Instant Revocation"
+    icon="ban"
+    href="/security/zero-trust"
+  >
+    Deactivating an agent in the dashboard invalidates all its grants immediately. In-flight requests that arrive after deactivation are rejected at step 2, before any credential is touched.
+  </Card>
+</CardGroup>
+
+---
+
+## Why not environment variables?
+
+Most agents today receive credentials through one of three channels, each of which introduces a distinct leak surface:
+
+<Accordion title="Environment variables">
+  Environment variables are visible to every process running under the same user, including subprocesses spawned by the agent. They appear in `/proc/<pid>/environ` on Linux, in crash reporters, in CI log exports, and in any tool that dumps the process environment for debugging. Once an agent reads a key from `$ANTHROPIC_API_KEY`, that value lives in its context and can be echoed, summarized, or written to a file.
+</Accordion>
+
+<Accordion title="Tool arguments">
+  When a credential is passed as a tool argument — for example `{"api_key": "sk-..."}` — it flows through the agent's context window. Reasoning models often log tool call inputs verbatim. Multi-step agents may include previous tool calls in their prompt for context. Summarization tools can extract and surface values that were meant to be transient.
+</Accordion>
+
+<Accordion title="MCP config files">
+  Model Context Protocol configuration files store server addresses and sometimes credentials on disk in plaintext. They are read by every model that loads the MCP config, shared across sessions, and frequently committed to version control by mistake. A single leaked config file exposes credentials for every service it references.
+</Accordion>
+
+Sesame eliminates all three leak surfaces. The agent's process never holds the credential — it passes only a JWT that identifies the device, and the broker resolves the actual secret entirely on the server side.
+
+<Note>
+  Sesame's audit log captures every proxied request, every approval decision, and every revocation event. Credential values are redacted before the log entry is written, so the audit trail is safe to export, share with security teams, or feed into a SIEM without risk of exposing secrets.
+</Note>

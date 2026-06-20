@@ -1,0 +1,43 @@
+---
+title: "Sesame Agent Skills: Teach Your AI to Use the Broker"
+sidebarTitle: "Overview"
+description: "Sesame skills are drop-in agent configurations that route authenticated API calls through the broker automatically — no API keys in agent context."
+---
+
+Sesame skills are pre-built agent configurations that teach your AI agent to use `sesame request` instead of `curl` or `fetch` for API calls. Once installed, your agent learns to check which hostnames are configured, handle the first-time approval flow, and never construct auth headers itself — credentials stay inside the broker at all times.
+
+## Available Skills
+
+<CardGroup cols={2}>
+  <Card title="sesame" icon="shield-check" href="/skills/install">
+    Teaches your agent to proxy all authenticated API calls through the Sesame broker. The agent runs `sesame request` instead of constructing raw HTTP calls, checks configured hostnames via `sesame hostnames`, and defers all auth header construction to the broker.
+  </Card>
+  <Card title="sesame-onboard" icon="cloud-arrow-up" href="/skills/self-host">
+    Walks you through deploying a fully self-hosted Sesame broker inside your own AWS account. Covers AWS CLI login verification, Google OAuth setup, a dry-run preview of resources, and the final deploy — all interactively from inside your agent.
+  </Card>
+</CardGroup>
+
+## Supported Agents
+
+Skills auto-detect your agent platform at install time — no manual configuration required. Supported platforms include:
+
+- **Claude Code**
+- **Codex**
+- **Cursor**
+- **OpenClaw**
+- 40+ additional agent platforms detected automatically
+
+## Prerequisites
+
+<Note>
+  Before installing any Sesame skill, make sure you have:
+
+  - The **sesame CLI** installed on your machine ([installation guide](/quickstart))
+  - Your device **registered** by running `sesame login`
+  - At least one **hostname configured** in your dashboard at [getsesame.dev](https://getsesame.dev)
+</Note>
+
+## Next Steps
+
+- [Install skills for your agent](/skills/install) — run the installer and get your agent routing through the broker in minutes
+- [Deploy a self-hosted broker](/skills/self-host) — keep all AI agent traffic inside your own AWS infrastructure

@@ -1,0 +1,46 @@
+---
+title: "Audit Logs: Complete Visibility into Agent API Requests"
+sidebarTitle: "Audit Logs"
+description: "Sesame logs every proxied request, approval, and revocation event with timestamps and HTTP metadata — credential values are never included in logs."
+---
+
+Sesame provides immutable audit logs for every action taken through the broker. Every API request your agents make, every approval or denial you issue, and every revocation event is recorded with a precise timestamp — giving you a complete, tamper-evident history of what your agents did, when they did it, and what decisions were made along the way. You always know exactly what happened.
+
+## What Sesame Logs
+
+Sesame captures the following event types in the audit trail:
+
+- **Proxied HTTP requests** — Target hostname, HTTP method, URL path, HTTP status code returned by the upstream API, and a UTC timestamp for every request the broker forwards on behalf of an agent.
+- **Approval and denial events** — Agent ID, target hostname, requested HTTP method and path pattern, the decision made (approved or denied), and the timestamp of that decision.
+- **Revocation events** — Which agent was deactivated or which specific hostname grant was revoked, the identity of the actor who initiated the revocation, and the timestamp.
+- **Administrative actions** — Policy changes, secret updates, agent creation, and other account-level operations that affect broker behavior.
+
+## What Sesame Does Not Log
+
+<Note>
+  To protect the confidentiality of your data and your users' data, Sesame deliberately excludes the following from all log entries:
+
+  - **Request bodies** — The payload your agent sends to the upstream API is never recorded.
+  - **Credential and secret values** — API keys, tokens, and other secrets are redacted at the proxy level before any log entry is written. A credential value can never appear in the audit trail.
+  - **Response bodies** — The data returned by the upstream API to your agent is never stored by Sesame.
+</Note>
+
+## Where to View Your Audit Logs
+
+The full audit trail for your account is available in the Sesame web dashboard at [getsesame.dev](https://getsesame.dev). The logs view lets you filter by agent, hostname, event type, and time range so you can quickly narrow down the events relevant to a specific incident or review period.
+
+## Data Retention
+
+Audit logs are retained for **90 days** from the time each event is recorded. Events older than 90 days are automatically purged. If your compliance requirements call for longer retention, export your logs regularly using the export feature described below.
+
+## Data Security
+
+Sesame stores secrets in AWS Secrets Manager, encrypted at rest, and transmits all data over TLS. Your audit logs are strictly isolated to your account — no other account can ever read your log entries. Credential values are redacted by the proxy before any log record is written, so there is no stage in the pipeline at which a secret could be inadvertently persisted.
+
+## Exporting Your Logs
+
+You can export secret metadata and the full audit log history directly from the Sesame dashboard. Navigate to **Settings → Export** to download a structured export of your account's audit data. Exports are scoped to your account and include all event types listed above, with credential values omitted.
+
+<Tip>
+  Audit logs are your first tool for investigating unexpected agent behavior. If an agent makes a call you didn't expect, check the audit trail to see the exact hostname, method, and path that was requested, and cross-reference it with the approval history to understand how access was granted. During development and testing, reviewing the audit log after each agent run is a fast way to verify the agent is only calling the APIs you intended.
+</Tip>

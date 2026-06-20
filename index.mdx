@@ -1,0 +1,90 @@
+---
+title: "Sesame: Secrets Stay Secret. Even from Your AI Agent."
+sidebarTitle: "Home"
+description: "Sesame is a zero-trust credential broker for AI agents. Credentials are injected server-side — your secrets never touch agent memory, logs, or prompts."
+---
+
+Sesame is a user-controlled credential broker that lets your AI agents make authenticated API calls without ever seeing your API keys. Instead of injecting secrets into agent prompts or environment variables, Sesame intercepts every request, attaches the right `Authorization` header server-side, and forwards only the response back to the agent. You approve every new access, see every request in real time, and can revoke any agent in one click.
+
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    Learn what Sesame is, why it exists, and how the zero-trust brokering model protects your credentials.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install the CLI and make your first brokered request in under five minutes.
+  </Card>
+  <Card title="How It Works" icon="shield-halved" href="/how-it-works">
+    Understand Sesame's zero-trust architecture and credential-injection model.
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/cli/login">
+    Full reference for every `sesame` command, flag, and option.
+  </Card>
+  <Card title="Agent Skills" icon="robot" href="/skills/overview">
+    Install the Sesame skill so your AI agent automatically routes calls through the broker.
+  </Card>
+  <Card title="Integrations" icon="plug" href="/integrations/providers">
+    Browse 70+ pre-built provider integrations and MCP server support.
+  </Card>
+</CardGroup>
+
+## Get Up and Running
+
+<Steps>
+  <Step title="Install the CLI">
+    Run the installer on macOS (arm64/x86_64) or Linux (x86_64):
+
+    ```bash
+    curl -fsSL https://getsesame.dev/install.sh | sh
+    ```
+  </Step>
+  <Step title="Register your device">
+    Generate a cryptographic device identity and link it to your Sesame account:
+
+    ```bash
+    sesame login
+    ```
+
+    This opens a one-click claim URL in your browser. After approval, your device is registered and ready to broker requests.
+  </Step>
+  <Step title="Make an authenticated request">
+    Call any API without an API key in sight:
+
+    ```bash
+    sesame request POST https://api.stripe.com/v1/payment_intents \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "amount=2000&currency=usd"
+    ```
+
+    Sesame looks up the secret configured for `api.stripe.com`, injects the `Authorization` header, and returns the response.
+  </Step>
+  <Step title="Add the agent skill (optional)">
+    Teach your AI agent (Claude Code, Codex, Cursor, and more) to use Sesame automatically:
+
+    ```bash
+    npx skills add getsesame/skills
+    ```
+  </Step>
+</Steps>
+
+## Why Sesame?
+
+<CardGroup cols={3}>
+  <Card title="Secrets Never Exposed" icon="eye-slash" href="/security/zero-trust">
+    Credentials are injected at the broker — they never appear in agent prompts, logs, tool arguments, or memory.
+  </Card>
+  <Card title="Human Approval" icon="user-check" href="/security/approval-flow">
+    Every first access to a new hostname requires your explicit approval via the app or Telegram.
+  </Card>
+  <Card title="Instant Revocation" icon="ban" href="/security/revocation">
+    Cut off an agent, a single grant, or the entire door in one click — no credential rotation needed.
+  </Card>
+  <Card title="70+ Providers" icon="plug" href="/integrations/providers">
+    Pre-built integrations for Anthropic, Stripe, GitHub, Slack, and dozens more out of the box.
+  </Card>
+  <Card title="Audit Trail" icon="list-check" href="/security/audit-logs">
+    Immutable logs capture every proxied request, approval, and revocation — with credentials redacted.
+  </Card>
+  <Card title="MCP Support" icon="server" href="/integrations/mcp">
+    Connect MCP servers alongside API keys. Your agent gets the tools, never the tokens.
+  </Card>
+</CardGroup>

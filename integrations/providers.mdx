@@ -1,0 +1,284 @@
+---
+title: "BYO or use 70+ Supported API Services"
+sidebarTitle: "Providers"
+description: "Sesame has 70+ pre-built provider integrations. Add your API key in the dashboard and the broker automatically injects it for matching requests."
+---
+
+Sesame ships with pre-built integrations for 70\+ API providers — add your credential once in the dashboard and the broker automatically injects the right `Authorization` header whenever `sesame request` targets that provider's hostname. You never expose secrets to your agent; the broker handles injection transparently at request time.
+
+## How credential matching works
+
+Credentials in Sesame are keyed to a hostname. When your agent calls `sesame request`, the broker inspects the target URL, finds the matching credential, and injects the authentication header before forwarding the request. For example, when your agent runs:
+
+```bash
+sesame request POST https://api.stripe.com/v1/payment_intents \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "amount=2000&currency=usd"
+```
+
+The broker resolves `api.stripe.com` to your stored Stripe secret and injects the `Authorization` header automatically. You configure the injection mode (Bearer token, API key header, or Basic auth) per credential when you add it.
+
+## Add a provider
+
+<Steps>
+  <Step title="Sign in to the dashboard">
+    Go to [getsesame.dev](https://getsesame.dev) and sign in to your account.
+  </Step>
+  <Step title="Click Add Secret">
+    From the dashboard home, click **Add Secret** to open the credential wizard.
+  </Step>
+  <Step title="Select a provider or enter a hostname">
+    Choose your provider from the built-in list. If your provider is not listed, enter a custom hostname (for example, `api.mycustomservice.com`).
+  </Step>
+  <Step title="Paste your API key or secret value">
+    Enter the API key, secret token, or other credential value for the selected provider.
+  </Step>
+  <Step title="Review encryption and storage">
+    Your secret is encrypted and stored in AWS Secrets Manager — the plaintext value is never stored by Sesame. Only the secure reference is retained.
+  </Step>
+  <Step title="Confirm availability">
+    Run the following command to verify the hostname is now brokered:
+
+    ```bash
+    sesame hostnames
+    ```
+
+    The provider's hostname appears in the output once the credential is active.
+  </Step>
+</Steps>
+
+## Supported providers
+
+<Tabs>
+  <Tab title="AI & LLM">
+    <CardGroup cols={2}>
+      <Card title="Anthropic" icon="brain" href="https://docs.anthropic.com">
+        `api.anthropic.com`
+      </Card>
+
+      <Card title="OpenAI" icon="robot" href="https://platform.openai.com/docs">
+        `api.openai.com`
+      </Card>
+
+      <Card title="Mistral" icon="wind" href="https://docs.mistral.ai">
+        `api.mistral.ai`
+      </Card>
+
+      <Card title="Groq" icon="bolt" href="https://console.groq.com/docs">
+        `api.groq.com`
+      </Card>
+
+      <Card title="Cohere" icon="circle-nodes" href="https://docs.cohere.com">
+        `api.cohere.com`
+      </Card>
+
+      <Card title="Perplexity" icon="magnifying-glass" href="https://docs.perplexity.ai">
+        `api.perplexity.ai`
+      </Card>
+
+      <Card title="Deepseek" icon="microchip" href="https://platform.deepseek.com/api-docs">
+        `api.deepseek.com`
+      </Card>
+    </CardGroup>
+  </Tab>
+  <Tab title="Payments">
+    <CardGroup cols={2}>
+      <Card title="Stripe" icon="credit-card" href="https://stripe.com/docs/api">
+        `api.stripe.com`
+      </Card>
+
+      <Card title="PayPal" icon="paypal" href="https://developer.paypal.com/docs/api">
+        `api.paypal.com`
+      </Card>
+
+      <Card title="Square" icon="square" href="https://developer.squareup.com/docs">
+        `connect.squareup.com`
+      </Card>
+
+      <Card title="Adyen" icon="building-columns" href="https://docs.adyen.com">
+        `checkout.adyen.com`
+      </Card>
+
+      <Card title="Checkout.com" icon="money-bill" href="https://www.checkout.com/docs">
+        `api.checkout.com`
+      </Card>
+
+      <Card title="Dwolla" icon="arrow-right-arrow-left" href="https://developers.dwolla.com">
+        `api.dwolla.com`
+      </Card>
+
+      <Card title="Plaid" icon="link" href="https://plaid.com/docs">
+        `production.plaid.com`
+      </Card>
+
+      <Card title="Mercury" icon="landmark" href="https://docs.mercury.com">
+        `api.mercury.com`
+      </Card>
+
+      <Card title="Ramp" icon="chart-line" href="https://docs.ramp.com/developer-api">
+        `api.ramp.com`
+      </Card>
+
+      <Card title="Wise" icon="globe" href="https://api-docs.wise.com">
+        `api.wise.com`
+      </Card>
+    </CardGroup>
+  </Tab>
+  <Tab title="Developer Tools">
+    <CardGroup cols={2}>
+      <Card title="GitHub" icon="github" href="https://docs.github.com/en/rest">
+        `api.github.com`
+      </Card>
+
+      <Card title="GitLab" icon="gitlab" href="https://docs.gitlab.com/ee/api">
+        `gitlab.com`
+      </Card>
+
+      <Card title="CircleCI" icon="circle-dot" href="https://circleci.com/docs/api">
+        `circleci.com`
+      </Card>
+
+      <Card title="Buildkite" icon="hammer" href="https://buildkite.com/docs/apis">
+        `api.buildkite.com`
+      </Card>
+
+      <Card title="Vercel" icon="triangle" href="https://vercel.com/docs/rest-api">
+        `api.vercel.com`
+      </Card>
+
+      <Card title="Cloudflare" icon="cloud" href="https://developers.cloudflare.com/api">
+        `api.cloudflare.com`
+      </Card>
+
+      <Card title="Netlify" icon="server" href="https://docs.netlify.com/api/get-started">
+        `api.netlify.com`
+      </Card>
+
+      <Card title="Railway" icon="train" href="https://docs.railway.app/reference/public-api">
+        `backboard.railway.app`
+      </Card>
+
+      <Card title="Fly.io" icon="paper-plane" href="https://fly.io/docs/machines/api">
+        `api.machines.dev`
+      </Card>
+
+      <Card title="Render" icon="display" href="https://api-docs.render.com">
+        `api.render.com`
+      </Card>
+
+      <Card title="DigitalOcean" icon="droplet" href="https://docs.digitalocean.com/reference/api">
+        `api.digitalocean.com`
+      </Card>
+    </CardGroup>
+  </Tab>
+  <Tab title="Communication">
+    <CardGroup cols={2}>
+      <Card title="Slack" icon="slack" href="https://api.slack.com">
+        `slack.com`
+      </Card>
+
+      <Card title="Twilio" icon="phone" href="https://www.twilio.com/docs/usage/api">
+        `api.twilio.com`
+      </Card>
+
+      <Card title="Resend" icon="envelope" href="https://resend.com/docs/api-reference">
+        `api.resend.com`
+      </Card>
+
+      <Card title="Postmark" icon="stamp" href="https://postmarkapp.com/developer">
+        `api.postmarkapp.com`
+      </Card>
+
+      <Card title="SendGrid" icon="paper-plane" href="https://docs.sendgrid.com/api-reference">
+        `api.sendgrid.com`
+      </Card>
+
+      <Card title="Discord" icon="discord" href="https://discord.com/developers/docs">
+        `discord.com`
+      </Card>
+    </CardGroup>
+  </Tab>
+  <Tab title="Monitoring">
+    <CardGroup cols={2}>
+      <Card title="Datadog" icon="chart-bar" href="https://docs.datadoghq.com/api">
+        `api.datadoghq.com`
+      </Card>
+
+      <Card title="PagerDuty" icon="bell" href="https://developer.pagerduty.com/api-reference">
+        `api.pagerduty.com`
+      </Card>
+
+      <Card title="New Relic" icon="eye" href="https://docs.newrelic.com/docs/apis">
+        `api.newrelic.com`
+      </Card>
+
+      <Card title="PostHog" icon="chart-mixed" href="https://posthog.com/docs/api">
+        `app.posthog.com`
+      </Card>
+
+      <Card title="Sentry" icon="bug" href="https://docs.sentry.io/api">
+        `sentry.io`
+      </Card>
+    </CardGroup>
+  </Tab>
+  <Tab title="Productivity">
+    <CardGroup cols={2}>
+      <Card title="Notion" icon="book" href="https://developers.notion.com">
+        `api.notion.com`
+      </Card>
+
+      <Card title="Linear" icon="circle-half-stroke" href="https://developers.linear.app/docs">
+        `api.linear.app`
+      </Card>
+
+      <Card title="Airtable" icon="table" href="https://airtable.com/developers/web/api">
+        `api.airtable.com`
+      </Card>
+
+      <Card title="HubSpot" icon="hubspot" href="https://developers.hubspot.com/docs/api">
+        `api.hubapi.com`
+      </Card>
+
+      <Card title="Intercom" icon="comments" href="https://developers.intercom.com/docs">
+        `api.intercom.io`
+      </Card>
+    </CardGroup>
+  </Tab>
+  <Tab title="Other">
+    <CardGroup cols={2}>
+      <Card title="Clerk" icon="user-shield" href="https://clerk.com/docs/reference/backend-api">
+        `api.clerk.com`
+      </Card>
+
+      <Card title="Coinbase" icon="bitcoin" href="https://docs.cdp.coinbase.com">
+        `api.coinbase.com`
+      </Card>
+
+      <Card title="Shopify" icon="bag-shopping" href="https://shopify.dev/docs/api">
+        `myshopify.com`
+      </Card>
+
+      <Card title="Spotify" icon="spotify" href="https://developer.spotify.com/documentation/web-api">
+        `api.spotify.com`
+      </Card>
+    </CardGroup>
+  </Tab>
+</Tabs>
+
+<Note>
+  You can add any hostname not in the built-in list. When adding a secret, select **Custom** and enter the hostname manually (for example, `api.mycustomservice.com`). The broker injects your credential for all requests targeting that hostname, exactly as it does for built-in providers.
+</Note>
+
+## Make a request to a configured provider
+
+Once you have added a credential, your agent can call that provider through `sesame request` without embedding the API key in the command. The broker injects authentication automatically:
+
+```bash
+# Anthropic — no API key needed in the command
+sesame request POST https://api.anthropic.com/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{"model": "claude-sonnet-4-5", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+The broker resolves `api.anthropic.com`, retrieves your Anthropic key from AWS Secrets Manager, and injects the `x-api-key` header before forwarding the request. The agent process never touches the key value.

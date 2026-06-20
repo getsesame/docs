@@ -1,0 +1,59 @@
+---
+title: "MCP Server Integration: Zero-Trust Tool Access via Sesame"
+sidebarTitle: "MCP"
+description: "Connect any MCP server through Sesame so your agent gets the tools without the tokens. Supports Linear, Atlassian, Sentry, and custom MCP servers."
+---
+
+Connect any MCP server by storing its credential in Sesame as a secret scoped to the server's hostname. Your agent reaches the server through the broker, which injects the credential server-side — the token never enters the agent's environment. The same flow covers your own **custom MCP servers** and hosted ones such as Linear.
+
+<CardGroup cols={2}>
+  <Card title="Custom MCP Servers" icon="server" href="#connect-a-custom-mcp-server">
+    Connect any MCP server by providing its hostname and secrets
+  </Card>
+
+  <Card title="Linear" icon="circle-half-stroke" href="https://developers.linear.app/docs">
+    Create, update, and query Linear issues and projects.
+  </Card>
+</CardGroup>
+
+## Connect a custom MCP server
+
+<Steps>
+  <Step title="Open Secrets">
+    In the dashboard's left navigation, go to **Secrets**, then click **Add Secret**.
+  </Step>
+  <Step title="Enter the MCP server's hostname">
+    In the **Hostname** field, open the **Select a service or enter URL…** dropdown and choose **Enter custom URL**. Type your server's host — for example, `mcp.example.com`.
+  </Step>
+  <Step title="Label it">
+    Give the secret a **Label** so it's recognizable in the list (for example, `acme_mcp`).
+  </Step>
+  <Step title="Choose the secret value source">
+    Under **Secret value source**, select **Paste value** and paste the MCP server's token. (Use **OAuth 2.0** if the server issues OAuth tokens, or **Reference my AWS** to point at an existing AWS Secrets Manager ARN instead of pasting.)
+  </Step>
+  <Step title="Set the injection mode">
+    Pick the **Injection Mode** that matches how the server authenticates:
+
+    - **Bearer token** — sent as `Authorization: Bearer <token>` (the default; most MCP servers).
+    - **Custom header** — choose this and fill **Header Name** (e.g. `X-Api-Key`) for servers using a non-standard header.
+  </Step>
+  <Step title="Save">
+    Click **Next: Access Policy** — optionally restrict methods or paths — then **Save**. The server now appears in your secrets list with a **Use with your agent** action.
+  </Step>
+</Steps>
+
+## Hosted MCP servers
+
+A hosted server like Linear uses the exact same steps — enter its hostname in step 2 instead of a custom URL. Well-known services may already appear in the **Select a service…** dropdown, so you can pick one rather than typing the URL; otherwise enter it the same way as a custom server.
+
+## Call it from your agent
+
+Every authenticated request to the MCP server goes through `sesame request`; the broker matches the hostname to the secret and injects the credential. Your code never adds the auth header.
+
+```bash
+sesame request POST https://mcp.example.com/<path> -d '<body>'
+
+<Note>
+  The first call to a hostname you haven't used before blocks while you approve access, then completes. Treat the wait as expected, not an error.
+</Note>
+```

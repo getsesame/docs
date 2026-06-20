@@ -1,0 +1,74 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Sesame",
+  "theme": "luma",
+  "colors": {
+    "primary": "#5db2f5",
+    "light": "#a3d1fc"
+  },
+  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/getsesame"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Docs",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "how-it-works"
+            ]
+          },
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli/login",
+              "cli/request",
+              "cli/status",
+              "cli/hostnames"
+            ]
+          },
+          {
+            "group": "Agent Skills",
+            "pages": [
+              "skills/overview",
+              "skills/install",
+              "skills/self-host"
+            ]
+          },
+          {
+            "group": "Security & Privacy",
+            "pages": [
+              "security/zero-trust",
+              "security/approval-flow",
+              "security/audit-logs",
+              "security/revocation"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/providers",
+              "integrations/mcp"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "font": {
+    "headings": {
+      "family": "Manrope"
+    },
+    "body": {
+      "family": "Inter"
+    }
+  }
+}

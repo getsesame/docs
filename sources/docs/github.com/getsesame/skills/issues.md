@@ -1,0 +1,43 @@
+# Source: https://github.com/getsesame/skills/issues
+
+[getsesame](https://github.com/getsesame) / **[skills](https://github.com/getsesame/skills)** Public
+
+- [Notifications](https://github.com/login?return_to=%2Fgetsesame%2Fskills) You must be signed in to change notification settings
+- [Fork 1](https://github.com/login?return_to=%2Fgetsesame%2Fskills)
+- [Star 0](https://github.com/login?return_to=%2Fgetsesame%2Fskills)
+ 
+
+# Issues
+
+Search Issues
+
+is:issue state:open
+
+is:issue state:open
+
+Search
+
+[Labels](https://github.com/getsesame/skills/labels) [Milestones](https://github.com/getsesame/skills/milestones)New issueIssue creation is restricted in this repository
+
+## Search results
+
+- [Open\\ \\ 0 (0)](https://github.com/getsesame/skills/issues)
+- [Closed\\ \\ 0 (0)](https://github.com/getsesame/skills/issues?q=is%3Aissue%20state%3Aclosed)
+
+Author
+
+Labels
+
+Projects
+
+Milestones
+
+Assignees
+
+Types
+
+Sort by Newest, descending
+
+### No results
+
+Try adjusting your search filters.

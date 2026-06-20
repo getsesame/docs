@@ -1,0 +1,112 @@
+---
+title: "sesame request — Proxy an Authenticated HTTP Request"
+sidebarTitle: "Request"
+description: "sesame request proxies HTTP calls through the Sesame broker, injecting credentials server-side. Supports -H headers, -d body data, and --raw output."
+---
+
+`sesame request` is the core command of the Sesame CLI — it replaces `curl` for any API call that requires authentication. Instead of embedding API keys in your shell history or environment variables, you send the request through the Sesame broker, which looks up the right credentials for the target hostname and injects the `Authorization` header server-side before forwarding the call.
+
+## Syntax
+
+```bash
+sesame request <METHOD> <URL> [flags]
+```
+
+## Arguments and flags
+
+<ParamField path="METHOD" type="string" required>
+  The HTTP method to use. Accepts `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and any other valid HTTP verb.
+</ParamField>
+
+<ParamField path="URL" type="string" required>
+  The full URL of the API endpoint, including scheme and any query parameters.
+
+  ```bash
+  sesame request GET "https://api.github.com/repos/acme/app/issues?state=open"
+  ```
+</ParamField>
+
+<ParamField path="-H" type="string">
+  Add a request header. Use the same `"Name: Value"` syntax as `curl`. Repeat the flag to add multiple headers.
+
+  ```bash
+  sesame request GET https://api.example.com -H "Accept: application/json" -H "X-Request-ID: abc123"
+  ```
+</ParamField>
+
+<ParamField path="-d" type="string">
+  Request body data. Pass a raw string or use shell substitution to read from a file. Use with `POST`, `PUT`, and `PATCH` requests.
+
+  ```bash
+  sesame request POST https://api.example.com/items -d '{"name":"widget"}'
+  ```
+</ParamField>
+
+<ParamField path="--raw" type="flag">
+  Output the raw response body without any formatting or colour highlighting. Useful for piping the response into other tools such as `jq`, `grep`, or a file.
+
+  ```bash
+  sesame request GET https://api.example.com/data --raw | jq '.items[]'
+  ```
+</ParamField>
+
+## Examples
+
+<CodeGroup>
+```bash GitHub — list open issues
+sesame request GET \
+  "https://api.github.com/repos/acme/my-app/issues?state=open" \
+  -H "Accept: application/vnd.github+json"
+```
+
+```bash Anthropic — chat completion
+sesame request POST https://api.anthropic.com/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "Summarise the attached document."}
+    ]
+  }'
+```
+
+```bash Stripe — create a payment intent
+sesame request POST https://api.stripe.com/v1/payment_intents \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "amount=2000&currency=usd&automatic_payment_methods[enabled]=true"
+```
+
+```bash Slack — post a message
+sesame request POST https://slack.com/api/chat.postMessage \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel": "C0123456789",
+    "text": "Deployment to production completed successfully."
+  }'
+```
+</CodeGroup>
+
+## First-time approval for a new hostname
+
+<Note>
+  The first time you send a request to a hostname, the broker pauses and waits for you to approve it. You will receive an approval prompt in the Sesame dashboard or via your configured Telegram notification. Tap **Approve** to allow the request and establish the policy for that hostname. All subsequent requests to the same hostname use the cached policy and proceed without interruption.
+</Note>
+
+## How it works
+
+When you run `sesame request`, the following happens in order:
+
+1. The CLI attaches your JWT to the outbound call and sends it to the Sesame broker.
+2. The broker verifies the JWT signature against your registered device public key.
+3. The broker checks whether the target hostname has an active policy for your agent.
+4. If this is the first request to that hostname, the broker blocks and sends you an approval prompt.
+5. Once the policy check passes, the broker looks up the stored secret for that hostname and injects the `Authorization` header (or whichever auth header the provider requires).
+6. The broker forwards the request to the target API and streams the response back to your CLI.
+
+Your API keys are never exposed to the CLI, the agent process, or your shell environment.
+
+<Tip>
+  Run `sesame hostnames` before starting an agent session to confirm the broker has credentials configured for every API your agent needs. Requests to unconfigured hostnames are rejected before they reach the provider.
+</Tip>

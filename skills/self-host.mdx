@@ -1,0 +1,92 @@
+---
+title: "Deploy the Sesame Broker in Your Own AWS Infrastructure"
+sidebarTitle: "Self-Host"
+description: "Run the Sesame broker inside your own AWS VPC with your own Secrets Manager. One CLI command provisions VPC, database, and secrets infrastructure."
+---
+
+For teams that need to keep all AI agent traffic inside their own infrastructure, Sesame supports fully self-hosted deployment inside your AWS account. One command provisions the broker, VPC, Secrets Manager integration, and database — and the `sesame-onboard` skill guides your agent through every step interactively so nothing falls through the cracks.
+
+<Warning>
+  Self-hosted deployment is intended for enterprise and advanced users. You must have the AWS CLI configured with permissions to create and manage VPCs, Secrets Manager secrets, and database instances before proceeding. Misconfigured IAM permissions are the most common source of deployment failures.
+</Warning>
+
+## Prerequisites
+
+Before starting the onboarding flow, confirm you have the following ready:
+
+- **AWS CLI** installed and configured — run `aws configure` to set your credentials and default region
+- **AWS account permissions** covering VPC creation, Secrets Manager, and RDS or equivalent database provisioning
+- **Google OAuth credentials** — you'll need a client ID and secret from the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) for authentication setup
+- **Node.js** installed on your machine (required to run `npx skills add`)
+
+## Deployment
+
+<Steps>
+  <Step title="Install the sesame-onboard skill">
+    Run the skills installer and select `sesame-onboard` from the menu:
+
+    ```bash
+    npx skills add getsesame/skills
+    ```
+
+    Choose **sesame-onboard** when prompted. The skill is written to your agent's configuration directory.
+  </Step>
+
+  <Step title="Run the onboarding skill inside your agent">
+    Start your agent and trigger the `sesame-onboard` skill. It guides you through the full deployment interactively:
+
+    - **AWS CLI login verification** — confirms your credentials are active and the correct account is targeted
+    - **Google OAuth setup** — prompts for your client ID and secret, with direct links to the Google Cloud Console to create them if needed
+    - **Dry-run preview** — shows every AWS resource that will be created before any real infrastructure is provisioned, so you can review costs and permissions
+    - **Final deploy** — provisions all resources and outputs your broker endpoint
+  </Step>
+
+  <Step title="Note your broker endpoint">
+    After a successful deploy, the skill prints your broker's internal VPC endpoint. Save this — you'll need it to point the Sesame CLI at your own instance.
+  </Step>
+
+  <Step title="Configure your sesame CLI to use your broker">
+    Update your local Sesame CLI configuration to route through the self-hosted endpoint instead of the managed service:
+
+    ```bash
+    sesame config set broker-url https://<your-vpc-endpoint>
+    ```
+
+    Replace `<your-vpc-endpoint>` with the URL output by the onboarding skill.
+  </Step>
+
+  <Step title="Verify agent traffic routes through your infrastructure">
+    Start your agent and make an authenticated request. All traffic now stays within your VPC — nothing leaves your AWS account to reach an external broker.
+  </Step>
+</Steps>
+
+## What Gets Provisioned
+
+<CardGroup cols={2}>
+  <Card title="VPC & Security Groups" icon="network-wired" href="/security/zero-trust">
+    A dedicated Virtual Private Cloud with security groups scoped to broker traffic only. No public ingress is opened unless you explicitly configure it.
+  </Card>
+  <Card title="AWS Secrets Manager" icon="key" href="/security/zero-trust">
+    All credentials and API keys are stored in your own Secrets Manager instance — Sesame never holds your secret values.
+  </Card>
+  <Card title="Database" icon="database" href="/security/audit-logs">
+    A managed database instance stores audit logs and policy configuration, provisioned inside the VPC with no public endpoint.
+  </Card>
+  <Card title="Broker Service" icon="server" href="/how-it-works">
+    The Sesame broker process itself, deployed inside the VPC and reachable only by your agents and Secrets Manager.
+  </Card>
+</CardGroup>
+
+## Security Architecture
+
+<Note>
+  **How your data is protected at rest and in transit:**
+
+  - **Secret values** are stored in AWS Secrets Manager with encryption at rest using AWS-managed KMS keys (or your own CMK if configured)
+  - **Application data** lives in PostgreSQL with row-level security enabled — each tenant's data is isolated at the database layer
+  - **All connections** between the broker, agents, and Secrets Manager use TLS; no plaintext communication paths are opened during provisioning
+</Note>
+
+## Not Ready to Self-Host?
+
+If your team doesn't need data residency or a dedicated VPC, the managed Sesame broker at [getsesame.dev](https://getsesame.dev) is production-ready with zero infrastructure overhead. You can always migrate to a self-hosted deployment later without changing how your agents are configured.

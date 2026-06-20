@@ -1,0 +1,83 @@
+{
+  "projectType": "saas",
+  "projectName": "Sesame",
+  "projectDescription": "A zero-trust credential broker that lets AI agents make authenticated API calls without ever seeing your secrets — credentials are injected server-side, every request is approved by you, and access can be revoked instantly.",
+  "theme": "luma",
+  "primaryColor": "#5db2f5",
+  "lightColor": "#a3d1fc",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Docs",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "how-it-works"
+            ]
+          },
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli/login",
+              "cli/request",
+              "cli/status",
+              "cli/hostnames"
+            ]
+          },
+          {
+            "group": "Agent Skills",
+            "pages": [
+              "skills/overview",
+              "skills/install",
+              "skills/self-host"
+            ]
+          },
+          {
+            "group": "Security & Privacy",
+            "pages": [
+              "security/zero-trust",
+              "security/approval-flow",
+              "security/audit-logs",
+              "security/revocation"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/providers",
+              "integrations/mcp"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Zero-trust credential brokering — secrets never enter agent prompts, logs, or memory",
+    "Ed25519 cryptographic device identity with challenge-response authentication",
+    "Per-hostname policies with just-in-time human approval (app or Telegram)",
+    "Instant revocation — deactivate an agent or single approval in one click",
+    "Immutable audit logs for every proxied request",
+    "70+ pre-built provider integrations (Anthropic, Stripe, GitHub, Slack, and more)",
+    "MCP server support alongside API key management",
+    "Enterprise self-hosted deployment inside your own VPC with AWS Secrets Manager",
+    "Auto-expiring ephemeral credentials via time-limited authorization",
+    "Official agent skills for Claude Code, Codex, Cursor, and 40+ other agents"
+  ],
+  "publicApiSurface": [
+    "sesame login",
+    "sesame login --new",
+    "sesame refresh",
+    "sesame status",
+    "sesame switch <agent-id>",
+    "sesame hostnames",
+    "sesame request <METHOD> <URL> [-H] [-d] [--raw]",
+    "sesame --version",
+    "curl -fsSL https://getsesame.dev/install.sh | sh",
+    "npx skills add getsesame/skills"
+  ]
+}

@@ -1,0 +1,95 @@
+---
+title: "sesame login — Register a Device with Sesame Broker"
+sidebarTitle: "Login"
+description: "sesame login registers your device by generating an Ed25519 keypair and opening a one-click claim URL. Use --new to register additional agents."
+---
+
+`sesame login` registers your device with the Sesame broker by generating a local Ed25519 keypair and walking you through a one-click browser approval flow. Run it once on each machine where you want an agent to operate — your private key never leaves the device.
+
+```bash
+sesame login
+```
+
+## What happens during login
+
+<Steps>
+  <Step title="Keypair generation">
+    The CLI generates an Ed25519 keypair on your device. The private key is written to local secure storage and never transmitted to the broker or any external service.
+  </Step>
+  <Step title="Claim URL opens in your browser">
+    The CLI prints a one-time claim URL and attempts to open it automatically. If your browser does not open, copy the URL and paste it manually.
+
+    ```
+    Opening claim URL: https://getsesame.dev/claim/tkn_01jx...
+    Waiting for approval…
+    ```
+  </Step>
+  <Step title="Approve the device in the Sesame dashboard">
+    In the Sesame dashboard, review the device details — name, fingerprint, and timestamp — then click **Approve**. The CLI polls until it receives the confirmation.
+  </Step>
+  <Step title="Broker issues a signed JWT">
+    Once approved, the broker issues a JWT signed with EdDSA and tied to your device's public key. This token proves your identity on every subsequent request.
+  </Step>
+  <Step title="JWT stored locally">
+    The CLI writes the JWT to local storage. It is automatically attached to every `sesame request` call from this device. You are now registered and ready to make authenticated requests.
+  </Step>
+</Steps>
+
+## Flags
+
+<ParamField query="--new" type="flag" optional>
+  Register an additional agent on the same device. Each agent gets its own keypair and identity, which is useful when running multiple independent agents side by side — for example, a coding agent and a customer-support agent on the same laptop.
+
+  ```bash
+  sesame login --new
+  ```
+</ParamField>
+
+## Related commands
+
+### Refresh an expired token
+
+```bash
+sesame refresh
+```
+
+Refreshes your JWT via a challenge-response exchange with your local device key. No browser interaction required — the broker issues a fresh token automatically if your device identity is still active.
+
+<Note>
+  `sesame refresh` runs automatically in the background whenever a token expires mid-session. You only need to call it manually if you see an `auth: token expired` error and want to resolve it without retrying the original request.
+</Note>
+
+### Switch the active agent
+
+```bash
+sesame switch <agent-id>
+```
+
+Changes the active agent for the current shell session. Useful when you have registered multiple agents with `sesame login --new` and want to direct requests through a specific identity.
+
+```bash
+sesame switch agent_01jxk2m9p4qr
+# Active agent switched to agent_01jxk2m9p4qr
+```
+
+## Example output
+
+A successful `sesame login` looks like this:
+
+```
+Generating Ed25519 keypair…          done
+Device fingerprint: a3:b7:c2:d1:e9:f4:08:3a:bb:12:cd:45:ef:67:89:ab
+Opening claim URL: https://getsesame.dev/claim/tkn_01jxk2m9p4qr5stvwxyz
+
+Waiting for approval…                approved ✓
+
+Broker issued JWT (EdDSA, expires in 24h)
+Active agent: agent_01jxk2m9p4qr
+
+You're registered. Run `sesame status` to verify, or make your first
+authenticated request with `sesame request GET https://api.example.com`.
+```
+
+<Tip>
+  Run `sesame status` immediately after login to confirm your device fingerprint and token state before making your first request.
+</Tip>

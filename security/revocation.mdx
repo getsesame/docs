@@ -1,0 +1,59 @@
+---
+title: "Revoke Agent Access Instantly — No Credential Rotation"
+sidebarTitle: "Revocation"
+description: "Sesame lets you revoke an agent, a single approval, or all access in one click — immediately stopping all brokered requests without rotating your API keys."
+---
+
+One of Sesame's most important security properties is instant revocation. Because credentials never leave the broker, you can cut off any agent's access immediately — without touching the underlying API key, without coordinating with the API provider, and without any propagation delay. The moment you deactivate an agent, its JWT fails verification at the broker and every subsequent brokered request is rejected.
+
+## Three Levels of Revocation
+
+Sesame gives you three distinct revocation controls, from the most surgical to the most sweeping.
+
+<CardGroup cols={1}>
+  <Card title="1. Revoke a Single Approval" icon="circle-minus" href="/security/revocation">
+    Remove a specific hostname grant for one agent. The agent loses access to that particular API but retains all its other approved grants. The next time the agent attempts to reach the revoked hostname, it will trigger the normal just-in-time approval flow — giving you the opportunity to re-approve with updated policy terms.
+  </Card>
+  <Card title="2. Deactivate an Agent" icon="user-slash" href="/security/revocation">
+    Invalidate all grants for a specific agent in a single action. The agent's JWT is immediately rejected by the broker on every subsequent request, regardless of which hostname it targets. Use this when an agent is compromised, retired, or needs to be reconfigured from scratch.
+  </Card>
+  <Card title="3. Delete the IAM Role or Broker Access" icon="door-closed" href="/security/revocation">
+    Remove the broker's ability to proxy requests entirely. This is the broadest control — no agent can make brokered requests through Sesame until access is explicitly restored. Use this in a worst-case scenario where you need to cut the door completely while you investigate.
+  </Card>
+</CardGroup>
+
+## How to Deactivate an Agent
+
+The most common revocation action is deactivating a specific agent. Follow these steps:
+
+<Steps>
+  <Step title="Open the Sesame dashboard">
+    Navigate to [getsesame.dev](https://getsesame.dev) and sign in to your account.
+  </Step>
+  <Step title="Go to Agents">
+    Select **Agents** from the sidebar to view all agents registered to your account.
+  </Step>
+  <Step title="Find the agent">
+    Locate the agent you want to revoke. You can search by name or filter by status.
+  </Step>
+  <Step title="Click Deactivate">
+    Open the agent's detail view and click **Deactivate**. Confirm the action when prompted.
+  </Step>
+  <Step title="Access is cut immediately">
+    All active grants for that agent are invalidated the instant you confirm. Any in-flight `sesame request` call using that agent's JWT will fail broker verification and receive an error. There is no grace period.
+  </Step>
+</Steps>
+
+## Why Revocation Is Instant
+
+Because Sesame verifies the agent's JWT on every single request — not just at session start — a deactivated agent's token fails at step 2 of the broker flow the moment it is checked. There is no cached session, no token refresh window, and no background propagation delay. Revocation is a hard, synchronous cut.
+
+<Warning>
+  Revoking an agent in Sesame stops all brokered requests immediately, but it does **not** rotate the underlying API key stored in your vault. If you have reason to believe that an API key was directly compromised outside of Sesame — for example, if it was committed to a repository or exposed in a log — you must rotate it in the API provider's dashboard and update the stored secret in Sesame separately. Deactivating the agent alone is not sufficient in that scenario.
+</Warning>
+
+## Using Revocation During Incident Response
+
+<Tip>
+  If an agent starts behaving unexpectedly — making calls you didn't authorize, hitting unfamiliar hostnames, or generating unusual traffic volume — **deactivate it first, then investigate**. Once the agent is deactivated, open the [Audit Logs](/security/audit-logs) view to reconstruct exactly what it did: every proxied request, every hostname it reached, and every approval that was granted. When you understand the scope of the incident, you can re-activate the agent with a tightened policy or provision a new agent with the correct configuration.
+</Tip>

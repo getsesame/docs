@@ -1,0 +1,67 @@
+---
+title: "sesame hostnames — Show All Configured API Hostnames"
+sidebarTitle: "Hostnames"
+description: "sesame hostnames lists every API hostname that has a secret configured in your Sesame vault. Use it to confirm a provider is set up before making requests."
+---
+
+`sesame hostnames` queries the broker and returns the list of API hostnames that have credentials stored in your Sesame vault. Run it before starting an agent session to confirm every provider your agent depends on is configured — if a hostname is missing from the list, the broker will reject requests to it rather than pass them through unauthenticated.
+
+```bash
+sesame hostnames
+```
+
+## Example output
+
+```text
+Configured hostnames (12):
+  api.anthropic.com
+  api.openai.com
+  api.stripe.com
+  api.github.com
+  slack.com
+  api.twilio.com
+  api.sendgrid.com
+  api.linear.app
+  api.notion.com
+  hooks.zapier.com
+  api.airtable.com
+  api.resend.com
+```
+
+<Note>
+  The broker only injects credentials for hostnames that appear in this list. If you send a `sesame request` to a hostname that is not configured in your vault, the broker rejects the request before it reaches the provider. Add the missing provider's credentials in the Sesame dashboard first.
+</Note>
+
+## Adding a new hostname
+
+To add credentials for a provider that is not yet in your vault:
+
+1. Open the Sesame dashboard at [getsesame.dev](https://getsesame.dev).
+2. Navigate to **Secrets → Add Secret**.
+3. Select the provider or enter the hostname manually.
+4. Paste your API key or OAuth token and save.
+5. Run `sesame hostnames` again to confirm the hostname now appears in the list.
+
+<Warning>
+  Credentials are stored encrypted in the Sesame vault and are never transmitted to your device or exposed in CLI output. The `sesame hostnames` command only returns the hostname strings, not the secrets themselves.
+</Warning>
+
+## Using `hostnames` with `sesame request`
+
+Once you have confirmed a hostname is configured, pass it to `sesame request` as part of the full URL:
+
+```bash
+# Confirm the provider is ready
+sesame hostnames | grep anthropic
+#   api.anthropic.com
+
+# Then make the request — broker injects the API key automatically
+sesame request POST https://api.anthropic.com/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{"model":"claude-sonnet-4-5","max_tokens":512,"messages":[{"role":"user","content":"Hello"}]}'
+```
+
+<Tip>
+  Make `sesame hostnames` the first step in your agent's startup check. If a required hostname is missing, fail fast with a clear error rather than discovering the missing credential mid-task.
+</Tip>

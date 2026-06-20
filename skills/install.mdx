@@ -1,0 +1,76 @@
+---
+title: "Install Sesame Agent Skills for Claude, Cursor, and More"
+sidebarTitle: "Install"
+description: "Install the Sesame skill to auto-detect your agent platform and configure it to route API calls through the broker instead of exposing credentials."
+---
+
+Running `npx skills add getsesame/skills` auto-detects every agent platform installed on your machine and drops you into an interactive prompt to choose which one to configure — no manual path hunting or config editing required.
+
+## Basic Installation
+
+<Steps>
+  <Step title="Run the installer">
+    Execute the following command in your terminal:
+
+    ```bash
+    npx skills add getsesame/skills
+    ```
+
+    The installer scans your system for supported agent platforms and presents a selection menu.
+  </Step>
+
+  <Step title="Select your agent">
+    Choose your agent from the detected list. If you have multiple agents installed, you can run the command again to add the skill to additional agents, or use the `--all` flag to target every detected agent at once.
+  </Step>
+
+  <Step title="Skill is written to the agent's config directory">
+    The installer writes the skill to the correct configuration directory for your chosen agent automatically — no manual file placement needed.
+  </Step>
+
+  <Step title="Start your agent">
+    Launch your agent as usual. It now routes authenticated API calls through `sesame request` and never exposes credentials in its context.
+  </Step>
+</Steps>
+
+## Install Options
+
+<CodeGroup>
+
+```bash Interactive (default)
+# Prompts you to select an agent from detected platforms
+npx skills add getsesame/skills
+```
+
+```bash Global install
+# Installs to the user-level agent directory
+npx skills add getsesame/skills --global
+```
+
+```bash All detected agents
+# Installs to every agent platform found on your machine
+npx skills add getsesame/skills --all
+```
+
+```bash Non-interactive
+# Skips all confirmation prompts; combines global + all
+npx skills add getsesame/skills --yes --global --all
+```
+
+</CodeGroup>
+
+<Note>
+  **PromptScript and global installs:** PromptScript only supports project-level skill installation, so `--global` skips it silently. All other detected agents install successfully and the command exits `0` — nothing is broken. For a fully clean install across every agent including PromptScript, run the installer from inside a project directory instead of a global context.
+</Note>
+
+## What the Skill Does After Installation
+
+Once the `sesame` skill is active, your agent automatically:
+
+1. **Routes requests through `sesame request`** instead of calling `curl`, `fetch`, or any raw HTTP client directly
+2. **Checks `sesame hostnames`** to verify which hostnames are configured before making a call
+3. **Handles the first-time approval flow** — walks through any one-time consent prompts required by the broker
+4. **Never constructs auth headers** — credential injection is left entirely to the broker, keeping secrets out of the agent's context window
+
+<Tip>
+  If you already ran the Sesame CLI setup and Node.js was available on your machine, the skills installer may have run automatically — check whether your agent is already configured before running `npx skills add` again.
+</Tip>

@@ -1,0 +1,133 @@
+---
+title: "Quickstart: Install Sesame and Make Your First Request"
+sidebarTitle: "Quickstart"
+description: "Install the Sesame CLI, register your device, and proxy your first authenticated API request — credentials stay server-side the whole time."
+---
+
+Sesame keeps your API credentials out of agent prompts by injecting them server-side at the broker. This guide walks you from a fresh machine to a working brokered request in under five minutes.
+
+## Prerequisites
+
+- **Operating system:** macOS (arm64 or x86_64) or Linux (x86_64)
+- **Sesame account:** sign up or sign in at [getsesame.dev](https://getsesame.dev)
+- **Optional:** Node.js 18+ if you want to install agent skills automatically
+
+---
+
+## Steps
+
+<Steps>
+  <Step title="Install the CLI">
+    Run the one-line installer:
+
+    ```bash
+    curl -fsSL https://getsesame.dev/install.sh | sh
+    ```
+
+    The installer writes the `sesame` binary to `/usr/local/bin` by default. If that directory is not writable without `sudo`, it automatically falls back to `~/.local/bin`.
+
+    If you see a `PATH` warning after installation, add the install directory to your shell profile:
+
+    ```bash
+    # zsh
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+
+    # bash
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+    ```
+
+    <Tip>
+      If Node.js is available on your machine, the installer also runs
+      `npx skills add getsesame/skills --yes --global --all` automatically,
+      so your agent skills are ready the moment the CLI is installed.
+    </Tip>
+  </Step>
+
+  <Step title="Register your device">
+    ```bash
+    sesame login
+    ```
+
+    This command does two things:
+
+    1. Generates an **Ed25519 keypair** on your device. The private key never leaves your machine.
+    2. Opens a **one-click claim URL** in your browser. Sign in with your Sesame account to bind the keypair to your identity and complete device registration.
+
+    After you approve the claim in the browser, the CLI receives a signed JWT that it uses to authenticate every subsequent request.
+  </Step>
+
+  <Step title="Check device status">
+    ```bash
+    sesame status
+    ```
+
+    The output shows your device fingerprint (the public key hash), the registered agents bound to this device, and the current token state. Confirm the fingerprint matches what you see in the Sesame dashboard under **Devices**.
+  </Step>
+
+  <Step title="List configured hostnames">
+    ```bash
+    sesame hostnames
+    ```
+
+    This lists every API hostname that has a credential configured in your vault. If you have not added any credentials yet, visit the **Integrations** tab in the dashboard to connect a provider — Sesame's 70+ pre-built integrations make this a one-click step for common APIs.
+  </Step>
+
+  <Step title="Make an authenticated request">
+    Call the Anthropic Messages API without putting your API key in the command:
+
+    ```bash
+    sesame request POST https://api.anthropic.com/v1/messages \
+      -H "Content-Type: application/json" \
+      -H "anthropic-version: 2023-06-01" \
+      -d '{
+        "model": "claude-sonnet-4-5",
+        "max_tokens": 1024,
+        "messages": [{"role": "user", "content": "Hi"}]
+      }'
+    ```
+
+    Sesame verifies your device identity, checks that `api.anthropic.com` is an approved hostname, injects your Anthropic API key as an `Authorization` header, and forwards the request. The response comes back to your terminal exactly as it would from a direct `curl` call — minus any secret ever appearing on your side of the wire.
+
+    <Note>
+      The first time you target a new hostname, Sesame pauses the request and sends you an **approval prompt** via the Sesame app or Telegram. Tap **Approve** to allow the request and allow future requests to that hostname from this device.
+    </Note>
+  </Step>
+
+  <Step title="Install agent skills (optional)">
+    Agent skills teach supported AI agents (Claude Code, Codex, Cursor, OpenClaw, and 40+ others) to route their API calls through Sesame automatically:
+
+    ```bash
+    npx skills add getsesame/skills
+    ```
+
+    After installation, agents that previously called APIs directly will use `sesame request` instead — no prompt engineering or manual tool wiring required.
+  </Step>
+</Steps>
+
+---
+
+## Install options
+
+Use installer flags to pin a version, change the install prefix, or uninstall:
+
+<CodeGroup>
+  ```bash Default install
+  curl -fsSL https://getsesame.dev/install.sh | sh
+  ```
+
+  ```bash Specific version
+  curl -fsSL https://getsesame.dev/install.sh | sh -s -- --version v0.3.22
+  ```
+
+  ```bash Custom prefix
+  curl -fsSL https://getsesame.dev/install.sh | sh -s -- --prefix ~/.local/bin
+  ```
+
+  ```bash Uninstall
+  curl -fsSL https://getsesame.dev/install.sh | sh -s -- --uninstall
+  ```
+</CodeGroup>
+
+<Warning>
+  Sesame is pre-1.0 / alpha. If you pin a version in a shared or production environment, check the [changelog](https://getsesame.dev/changelog) before upgrading — breaking changes can occur between minor releases.
+</Warning>
