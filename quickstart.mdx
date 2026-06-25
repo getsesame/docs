@@ -110,9 +110,18 @@ Shall I proceed?
   </Step>
 
   <Step title="Make an authenticated request">
-    Call the Anthropic Messages API without putting your API key in the command:
+    Send your request with `sesame request` instead of `curl` — and target a hostname **that appeared in the previous `sesame hostnames` step**. `sesame request` only attaches a credential for hosts you've already configured a secret for; pointing it at anything else will fail.
+
+    <Warning>
+      If the host you want isn't in your `sesame hostnames` list, configure its secret first, then come back to this step.
+
+      Start with the CLI: `sesame secret create <name> --hostname <host>` returns a dashboard link where you paste the value (the CLI never accepts secret material). If that doesn't work, add the secret directly in the dashboard under **Credentials → Secrets**.
+    </Warning>
+
+    The example below calls the Anthropic Messages API. **It's only an example** — substitute whichever host is in *your* list and the request/headers that API expects:
 
     ```bash
+    # api.anthropic.com here is illustrative — swap in a host from YOUR `sesame hostnames` output
     sesame request POST https://api.anthropic.com/v1/messages \
       -H "Content-Type: application/json" \
       -H "anthropic-version: 2023-06-01" \
@@ -123,11 +132,15 @@ Shall I proceed?
       }'
     ```
 
-    Sesame verifies your device identity, checks that `api.anthropic.com` is an approved hostname, injects your Anthropic API key as an `Authorization` header, and forwards the request. The response comes back to your terminal exactly as it would from a direct `curl` call — minus any secret ever appearing on your side of the wire.
+    Sesame verifies your device identity, confirms the target hostname has a secret configured, injects the matching credential server-side, and forwards the request. The response comes back to your terminal exactly as it would from a direct `curl` call — minus any secret ever appearing on your side of the wire.
 
     <Note>
       The first time you target a new hostname, Sesame pauses the request and sends you an **approval prompt** via the Sesame app or Telegram. Tap **Approve** to allow the request and allow future requests to that hostname from this device.
     </Note>
+
+    <Tip>
+      If the response is an authentication error from the upstream API (e.g. `401`, "invalid key"), the secret exists but its stored value is wrong, expired, or empty — Sesame attached it and the provider rejected it. Fix the value in the dashboard under **Credentials → Secrets**, then retry. A `denied by policy` error is different: the credential is fine, but the secret's access policy doesn't allow that method or path — adjust the policy on that secret instead.
+    </Tip>
   </Step>
 </Steps>
 
