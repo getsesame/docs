@@ -142,6 +142,18 @@ Shall I proceed?
       If the response is an authentication error from the upstream API (e.g. `401`, "invalid key"), the secret exists but its stored value is wrong, expired, or empty — Sesame attached it and the provider rejected it. Fix the value in the dashboard under **Credentials → Secrets**, then retry. A `denied by policy` error is different: the credential is fine, but the secret's access policy doesn't allow that method or path — adjust the policy on that secret instead.
     </Tip>
   </Step>
+
+  <Step title="Enable browser notifications">
+    Approvals are time-sensitive — a `sesame request` to a new hostname pauses until you approve it, and times out after 5 minutes. Turn on browser notifications so those prompts reach you without watching the terminal.
+
+    Open [**Settings**](https://getsesame.dev/settings) (the same path on your own broker's URL if you self-host), go to the **Browser Notifications** section, and click **Enable browser notifications**. Accept the browser's permission prompt when it appears.
+
+    You'll then get system-level approval requests — and security alerts — in this browser even when the Sesame tab is closed; clicking one jumps straight to the approval screen. (Approvals also go to Telegram and the Sesame app, so you can use whichever channel you prefer.)
+
+    <Tip>
+      Enable this **before** your first request to a new hostname, so the very first approval prompt reaches you instead of the request sitting idle until it times out.
+    </Tip>
+  </Step>
 </Steps>
 
 ---
