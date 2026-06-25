@@ -4,13 +4,9 @@ sidebarTitle: "Quickstart"
 description: "Install the Sesame CLI, register your device, and proxy your first authenticated API request — credentials stay server-side the whole time."
 ---
 
-Sesame keeps your API credentials out of agent prompts by injecting them server-side at the broker. This guide walks you from a fresh machine to a working brokered request in under five minutes.
+Go from a fresh machine to your first brokered request in under five minutes.
 
-## Prerequisites
-
-- **Operating system:** macOS (arm64 or x86_64) or Linux (x86_64)
-- **Sesame account:** sign up or sign in at [getsesame.dev](https://getsesame.dev)
-- **Optional:** Node.js 18+ if you want to install agent skills automatically
+**Before you start:** you'll need macOS (arm64/x86_64) or Linux (x86_64) and a [Sesame account](https://getsesame.dev) — plus Node.js if you want agent skills installed automatically.
 
 ---
 
@@ -37,10 +33,42 @@ Sesame keeps your API credentials out of agent prompts by injecting them server-
     ```
 
     <Tip>
-      If Node.js is available on your machine, the installer also runs
-      `npx skills add getsesame/skills --yes --global --all` automatically,
-      so your agent skills are ready the moment the CLI is installed.
+      If Node.js is already on your machine, the installer runs the skill install
+      automatically — so the next step is mostly a confirmation.
     </Tip>
+  </Step>
+
+  <Step title="Install agent skills">
+    Agent skills teach supported AI agents (Claude Code, Codex, Cursor, OpenClaw, and 40+ others) to route their API calls through Sesame automatically — no prompt engineering or manual tool wiring required.
+
+    Skills install via `npx`, so you'll need Node.js. If you don't have it yet:
+
+    <CodeGroup>
+      ```bash macOS (Homebrew)
+      brew install node
+      ```
+
+      ```bash Linux / macOS (nvm)
+      curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+      nvm install --lts
+      ```
+    </CodeGroup>
+
+    Then add the skills:
+
+    ```bash
+    npx skills add getsesame/skills
+    ```
+
+    <Check>
+      Confirm it installed — the skill is just files on disk:
+
+      ```bash
+      ls ~/.agents/skills/sesame && echo "✓ Sesame skill installed"
+      ```
+
+      If that lists files, the skill is in place — your agents will now route their API calls through `sesame request`.
+    </Check>
   </Step>
 
   <Step title="Register your device">
@@ -91,16 +119,6 @@ Sesame keeps your API credentials out of agent prompts by injecting them server-
     <Note>
       The first time you target a new hostname, Sesame pauses the request and sends you an **approval prompt** via the Sesame app or Telegram. Tap **Approve** to allow the request and allow future requests to that hostname from this device.
     </Note>
-  </Step>
-
-  <Step title="Install agent skills (optional)">
-    Agent skills teach supported AI agents (Claude Code, Codex, Cursor, OpenClaw, and 40+ others) to route their API calls through Sesame automatically:
-
-    ```bash
-    npx skills add getsesame/skills
-    ```
-
-    After installation, agents that previously called APIs directly will use `sesame request` instead — no prompt engineering or manual tool wiring required.
   </Step>
 </Steps>
 
