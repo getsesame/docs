@@ -113,7 +113,12 @@ Shall I proceed?
     Send your request with `sesame request` instead of `curl` — and target a hostname **that appeared in the previous `sesame hostnames` step**. `sesame request` only attaches a credential for hosts you've already configured a secret for; pointing it at anything else will fail.
 
     <Warning>
-      If the host you want isn't in your `sesame hostnames` list, configure its secret first — run `sesame secret create` to get a dashboard link for adding the credential (or use the **Integrations** tab) — then come back to this step. Don't assume a host is usable just because the API exists.
+      If the host you want isn't in your `sesame hostnames` list, configure its secret first — then come back to this step. You can do this two ways:
+
+      - **CLI:** `sesame secret create <name> --hostname <host>` returns a dashboard link where you paste the value (the CLI never accepts secret material).
+      - **Dashboard:** open **Credentials → Secrets** and add it there directly.
+
+      Don't assume a host is usable just because the API exists.
     </Warning>
 
     The example below calls the Anthropic Messages API. **It's only an example** — substitute whichever host is in *your* list and the request/headers that API expects:
@@ -135,6 +140,10 @@ Shall I proceed?
     <Note>
       The first time you target a new hostname, Sesame pauses the request and sends you an **approval prompt** via the Sesame app or Telegram. Tap **Approve** to allow the request and allow future requests to that hostname from this device.
     </Note>
+
+    <Tip>
+      If the response is an authentication error from the upstream API (e.g. `401`, "invalid key"), the secret exists but its stored value is wrong, expired, or empty — Sesame attached it and the provider rejected it. Fix the value in the dashboard under **Credentials → Secrets**, then retry. A `denied by policy` error is different: the credential is fine, but the secret's access policy doesn't allow that method or path — adjust the policy on that secret instead.
+    </Tip>
   </Step>
 </Steps>
 
