@@ -63,6 +63,14 @@
       }
     ]
   },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude"
+    ]
+  },
   "font": {
     "headings": {
       "family": "Manrope"
