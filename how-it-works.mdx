@@ -58,7 +58,7 @@ Every call to `sesame request` attaches the device JWT to the outgoing request. 
 | 1. Verify JWT signature | Confirms the JWT was issued by Sesame and has not been tampered with. Rejects expired tokens. |
 | 2. Check agent is active | Looks up the device record. If the device has been deactivated, the request is rejected immediately. |
 | 3. Look up policy | Reads the per-hostname policy for this agent: allowed HTTP methods, permitted path patterns, and any rate limits. |
-| 4. Approve (first time per host) | If this agent has never accessed this hostname before, the broker pauses the request and sends you an approval prompt via the Sesame app or Telegram. The request proceeds only after you tap **Approve**. |
+| 4. Approve (first time per host) | If this agent has never accessed this hostname before, the broker pauses the request and sends you an approval prompt via the Sesame app, the Sesame dashboard, or Telegram. The request proceeds only after you tap **Approve**. |
 | 5. Inject Auth header | Fetches the stored credential from the vault and attaches it as an `Authorization` header. The agent never sees this value. |
 
 Once all five checks pass, the broker proxies the request to the upstream API and streams the response back to the agent.

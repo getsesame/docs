@@ -1,7 +1,7 @@
 ---
 title: "Human Approval Flow for First-Time Agent API Requests"
 sidebarTitle: "Approval Flow"
-description: "Sesame requires your approval the first time an agent accesses any new hostname. Approve or deny via the dashboard or Telegram in real time."
+description: "Sesame requires your approval the first time an agent accesses any new hostname. Approve or deny via the Sesame app, the Sesame dashboard, or Telegram in real time."
 ---
 
 Every time one of your agents targets a hostname it has never accessed before, Sesame blocks the request and sends you a real-time notification before injecting any credential. You review the hostname, HTTP method, and path pattern, then tap Approve or Deny — giving you a human checkpoint before any secret is ever shared. The agent's request stays pending until you respond.
@@ -16,7 +16,7 @@ Every time one of your agents targets a hostname it has never accessed before, S
     The broker verifies the JWT, confirms the agent is active, and looks up whether an approved policy already exists for `api.example.com` scoped to this agent.
   </Step>
   <Step title="No policy found — notification sent">
-    If no matching policy exists, the broker holds the request and immediately sends you an approval notification via the Sesame mobile app or Telegram, whichever you have configured.
+    If no matching policy exists, the broker holds the request and immediately sends you an approval notification via the Sesame app, the Sesame dashboard, or Telegram, whichever you have configured.
   </Step>
   <Step title="You review the request">
     The notification shows you the target hostname, the HTTP method, and the requested path pattern. You have everything you need to make an informed decision before any credential moves.
@@ -34,11 +34,14 @@ Every time one of your agents targets a hostname it has never accessed before, S
 
 ## Notification Channels
 
-Sesame supports two channels for real-time approval notifications. Configure one or both in your account settings.
+Sesame supports three channels for real-time approval notifications. Configure whichever you like in your account settings.
 
-<CardGroup cols={2}>
+<CardGroup cols={3}>
   <Card title="Sesame Mobile App" icon="mobile" href="/integrations/providers">
     Receive push notifications on iOS or Android via the Sesame app. Approve or deny directly from the notification without opening the dashboard.
+  </Card>
+  <Card title="Sesame Dashboard" icon="browser" href="https://getsesame.dev/settings">
+    Approve or deny in the Sesame dashboard in your browser. Enable browser notifications under **Settings** to get system-level approval prompts even when the tab is closed.
   </Card>
   <Card title="Telegram" icon="telegram" href="/integrations/providers">
     Connect a Telegram bot to your account and receive approval requests in any chat or channel. Ideal if you spend your day in Telegram and want approvals inline with your workflow.
