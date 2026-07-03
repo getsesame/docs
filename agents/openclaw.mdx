@@ -1,0 +1,108 @@
+---
+title: "Connect OpenClaw to Sesame: A Keyless AI Agent"
+sidebarTitle: "OpenClaw"
+description: "Run your OpenClaw gateway through Sesame so its LLM and tool calls are injected server-side. OpenClaw holds only dummy placeholders — no real API keys on your box."
+---
+
+OpenClaw makes its LLM and tool calls in-process, so it works cleanly with [transparent egress](/agents/overview). Wrap the gateway with `sesame launch` and every brokered call — its model provider, Stripe, anything you've configured — is injected by the broker after your approval. OpenClaw itself stores only placeholders.
+
+<Note>
+  This guide uses the **cloud broker** at [getsesame.dev](https://getsesame.dev), so you never run your own broker or hold your own keys. Running your own broker? See [Self-Host](/skills/self-host) — the only difference is `sesame login --broker-url <your-url>`.
+</Note>
+
+<Warning>
+  **Human-in-the-loop.** Several steps hand off to a person in the [getsesame.dev](https://getsesame.dev) dashboard: **approving the device** (step 2), **adding secrets** (step 3), and **approving calls** (steps 4 and 6). The CLI commands **block and wait** for these. If you're an agent running this guide, stop at each hand-off and ask the user to complete the dashboard action before continuing — don't assume it succeeded.
+</Warning>
+
+## Prerequisites
+
+- An OpenClaw instance you can run (`openclaw gateway run`).
+- Node 22.19+ (OpenClaw's requirement).
+- A Sesame account at [getsesame.dev](https://getsesame.dev).
+
+## 1. Install the Sesame CLI + edge proxy
+
+```bash
+curl -fsSL https://getsesame.dev/install.sh | sh
+sesame proxyd install
+```
+
+## 2. Register your agent
+
+```bash
+sesame login
+```
+
+`sesame login` prints a claim URL and then **blocks, waiting for approval**.
+
+<Note>
+  **You, in the browser:** open the claim URL, sign in to [getsesame.dev](https://getsesame.dev), and approve the device. The command waits until you approve (it times out after ~15 minutes) and then prints `Agent approved`. Don't move on until you see that.
+</Note>
+
+## 3. Store your API keys in Sesame
+
+In the dashboard (**Secrets → Add**), add one secret per provider your agent uses — for example:
+
+| Provider | Hostname |
+| --- | --- |
+| Google Gemini | `generativelanguage.googleapis.com` |
+| OpenAI | `api.openai.com` |
+| Stripe | `api.stripe.com` |
+
+The dashboard presets fill in the correct injection mode. Your real key is stored in Sesame's vault — OpenClaw never receives it.
+
+<Note>
+  **You, in the browser** — this is a manual dashboard step, there's no CLI command. Add a secret for each provider your agent will call *before* you launch it.
+</Note>
+
+## 4. Replace OpenClaw's real keys with dummies
+
+So OpenClaw holds nothing real, overwrite its stored provider key with a placeholder using OpenClaw's own onboarding — run it **under `sesame launch`** so the key-validation call is brokered (your real key is injected) while OpenClaw stores only the dummy.
+
+For example, to set a placeholder for the provider your agent uses:
+
+```bash
+# Example — replace <provider> with yours (e.g. openai, anthropic, gemini)
+sesame launch -- openclaw onboard --non-interactive --accept-risk \
+  --auth-choice <provider>-api-key --<provider>-api-key "sesame-managed-placeholder" \
+  --skip-channels --skip-daemon --skip-ui --skip-skills --skip-search
+```
+
+<Note>
+  Running under `sesame launch` means OpenClaw's key-validation call is brokered — so **it raises an approval in the dashboard and waits**. Approve it (**Approvals** tab) for onboarding to finish. OpenClaw ends up storing only the placeholder.
+</Note>
+
+## 5. Run OpenClaw through Sesame
+
+```bash
+sesame launch -- openclaw gateway run
+```
+
+That's the whole integration — no changes to OpenClaw's code. Its egress now flows: **agent → local edge proxy → Sesame broker → provider.**
+
+<Tip>
+  Make it durable: set this as the `ExecStart` of your service manager (e.g. a systemd unit) so it survives reboots and restarts cleanly.
+</Tip>
+
+## 6. Use it
+
+Message your agent. When it calls a brokered host, **the request pauses** and an approval appears in your dashboard.
+
+<Note>
+  **You, in the browser:** open the dashboard's **Approvals** tab, review the pending request, and approve it. The agent's call is held until you do — if you don't approve within ~5 minutes, it fails. Once approved, the broker injects your real key and the call completes. Non-brokered hosts pass straight through with no approval.
+</Note>
+
+<Note>
+  Every brokered call prompts by default. Set an **auto-approve policy** on your model host so chat isn't gated on every turn, and keep **per-call approval on side-effecting hosts** like Stripe.
+</Note>
+
+## Verify it's keyless
+
+OpenClaw stores provider credentials in its agent SQLite store, not a plaintext file:
+
+```bash
+DB=~/.openclaw/agents/main/agent/openclaw-agent.sqlite
+sqlite3 -header -column "$DB" "SELECT * FROM auth_profile_store;"
+```
+
+You should see only your **placeholder** value. The real key exists only in Sesame's vault, injected per approved call. Also clear any leftover keys from earlier setups (e.g. an unused OpenAI key in `~/.openclaw/agents/main/agent/codex-home/auth.json`) so OpenClaw is fully keyless.
