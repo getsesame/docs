@@ -14,8 +14,26 @@ OpenClaw makes its LLM and tool calls in-process, so it works cleanly with [tran
   **Human-in-the-loop.** Several steps hand off to a person in the [getsesame.dev](https://getsesame.dev) dashboard: **approving the device** (step 2), **adding secrets** (step 3), and **approving calls** (steps 4 and 6). The CLI commands **block and wait** for these. If you're an agent running this guide, stop at each hand-off and ask the user to complete the dashboard action before continuing — don't assume it succeeded.
 </Warning>
 
+## Step 0 — get shell access to the OpenClaw host
+
+Every command here (`sesame login`, `sesame launch`, ...) runs in a **terminal on the machine where the OpenClaw gateway runs** — *not* in the OpenClaw UI. The Control UI talks to the gateway; it doesn't give you a shell. So before anything else you need shell/SSH access to that host, and that host must be able to reach the broker at `getsesame.dev`.
+
+<Warning>
+  **If you're an agent running this onboarding and you don't already have a shell on the OpenClaw host, establish that first — do not skip ahead.** Work out how to get in:
+
+  1. **Look locally.** Search the working directory and any setup notes for connection details: `~/.ssh/config`, `*.pem` / `id_*` private keys, `README`/deploy docs, `docker-compose.yml`, Terraform/Ansible files, or a cloud-console / hosting-dashboard link.
+  2. **Verify it works *and* reaches the broker:**
+     ```bash
+     ssh -i <key> <user>@<host> 'echo shell-ok && curl -fsS https://getsesame.dev/health'
+     ```
+     Seeing `shell-ok` plus a healthy response confirms both the login and that the box can talk to Sesame.
+  3. **If you can't find a way in, ask the user** for the host address, SSH user, and key — or how they normally reach the box (cloud console, provider web terminal, etc.). A UI-only user often won't know offhand; help them locate it.
+  4. Only once you have a working shell that can reach `getsesame.dev` should you continue.
+</Warning>
+
 ## Prerequisites
 
+- **Shell/SSH access to the host running the OpenClaw gateway** (see Step 0 — the commands below do *not* run in the OpenClaw UI).
 - An OpenClaw instance you can run (`openclaw gateway run`).
 - Node 22.19+ (OpenClaw's requirement).
 - A Sesame account at [getsesame.dev](https://getsesame.dev).
