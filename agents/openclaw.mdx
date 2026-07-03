@@ -33,32 +33,28 @@ Open the printed claim URL and approve the agent in your dashboard.
 
 ## 3. Store your API keys in Sesame
 
-In the dashboard (**Secrets → Add**), add one secret per provider your agent uses. The presets fill in the correct injection mode:
+In the dashboard (**Secrets → Add**), add one secret per provider your agent uses — for example:
 
-| Provider | Hostname | Injection |
-| --- | --- | --- |
-| Google Gemini | `generativelanguage.googleapis.com` | Header `x-goog-api-key` |
-| OpenAI | `api.openai.com` | Bearer |
-| Anthropic | `api.anthropic.com` | Header `x-api-key` |
-| Stripe | `api.stripe.com` | Bearer |
+| Provider | Hostname |
+| --- | --- |
+| Google Gemini | `generativelanguage.googleapis.com` |
+| OpenAI | `api.openai.com` |
+| Stripe | `api.stripe.com` |
 
-Your real key is stored in Sesame's vault — OpenClaw never receives it.
-
-<Warning>
-  **Gemini authenticates with the `x-goog-api-key` header, not a `?key=` query parameter.** The dashboard preset is correct; if you configure it by hand and injection returns `400 API key not valid`, switch the mode from query parameter to header `x-goog-api-key`.
-</Warning>
+The dashboard presets fill in the correct injection mode. Your real key is stored in Sesame's vault — OpenClaw never receives it.
 
 ## 4. Replace OpenClaw's real keys with dummies
 
-So OpenClaw holds nothing real. Run OpenClaw's own onboarding with a placeholder — **under `sesame launch`**, so its key-validation call is brokered (your real key is injected) while OpenClaw stores the dummy:
+So OpenClaw holds nothing real, overwrite its stored provider key with a placeholder using OpenClaw's own onboarding — run it **under `sesame launch`** so the key-validation call is brokered (your real key is injected) while OpenClaw stores only the dummy.
+
+For example, to set a placeholder for the provider your agent uses:
 
 ```bash
+# Example — replace <provider> with yours (e.g. openai, anthropic, gemini)
 sesame launch -- openclaw onboard --non-interactive --accept-risk \
-  --auth-choice gemini-api-key --gemini-api-key "sesame-managed-placeholder" \
+  --auth-choice <provider>-api-key --<provider>-api-key "sesame-managed-placeholder" \
   --skip-channels --skip-daemon --skip-ui --skip-skills --skip-search
 ```
-
-Repeat with the matching `--auth-choice` / `--<provider>-api-key` flag for any other provider your agent uses.
 
 ## 5. Run OpenClaw through Sesame
 
