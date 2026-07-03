@@ -44,6 +44,13 @@
             ]
           },
           {
+            "group": "Connect an Agent",
+            "pages": [
+              "agents/overview",
+              "agents/openclaw"
+            ]
+          },
+          {
             "group": "Security & Privacy",
             "pages": [
               "security/zero-trust",

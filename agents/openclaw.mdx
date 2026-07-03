@@ -1,0 +1,92 @@
+---
+title: "Connect OpenClaw to Sesame: A Keyless AI Agent"
+sidebarTitle: "OpenClaw"
+description: "Run your OpenClaw gateway through Sesame so its LLM and tool calls are injected server-side. OpenClaw holds only dummy placeholders — no real API keys on your box."
+---
+
+OpenClaw makes its LLM and tool calls in-process, so it works cleanly with [transparent egress](/agents/overview). Wrap the gateway with `sesame launch` and every brokered call — its model provider, Stripe, anything you've configured — is injected by the broker after your approval. OpenClaw itself stores only placeholders.
+
+<Note>
+  This guide uses the **cloud broker** at [getsesame.dev](https://getsesame.dev), so you never run your own broker or hold your own keys. Running your own broker? See [Self-Host](/skills/self-host) — the only difference is `sesame login --broker-url <your-url>`.
+</Note>
+
+## Prerequisites
+
+- An OpenClaw instance you can run (`openclaw gateway run`).
+- Node 22.19+ (OpenClaw's requirement).
+- A Sesame account at [getsesame.dev](https://getsesame.dev).
+
+## 1. Install the Sesame CLI + edge proxy
+
+```bash
+curl -fsSL https://getsesame.dev/install.sh | sh
+sesame proxyd install
+```
+
+## 2. Register your agent
+
+```bash
+sesame login
+```
+
+Open the printed claim URL and approve the agent in your dashboard.
+
+## 3. Store your API keys in Sesame
+
+In the dashboard (**Secrets → Add**), add one secret per provider your agent uses. The presets fill in the correct injection mode:
+
+| Provider | Hostname | Injection |
+| --- | --- | --- |
+| Google Gemini | `generativelanguage.googleapis.com` | Header `x-goog-api-key` |
+| OpenAI | `api.openai.com` | Bearer |
+| Anthropic | `api.anthropic.com` | Header `x-api-key` |
+| Stripe | `api.stripe.com` | Bearer |
+
+Your real key is stored in Sesame's vault — OpenClaw never receives it.
+
+<Warning>
+  **Gemini authenticates with the `x-goog-api-key` header, not a `?key=` query parameter.** The dashboard preset is correct; if you configure it by hand and injection returns `400 API key not valid`, switch the mode from query parameter to header `x-goog-api-key`.
+</Warning>
+
+## 4. Replace OpenClaw's real keys with dummies
+
+So OpenClaw holds nothing real. Run OpenClaw's own onboarding with a placeholder — **under `sesame launch`**, so its key-validation call is brokered (your real key is injected) while OpenClaw stores the dummy:
+
+```bash
+sesame launch -- openclaw onboard --non-interactive --accept-risk \
+  --auth-choice gemini-api-key --gemini-api-key "sesame-managed-placeholder" \
+  --skip-channels --skip-daemon --skip-ui --skip-skills --skip-search
+```
+
+Repeat with the matching `--auth-choice` / `--<provider>-api-key` flag for any other provider your agent uses.
+
+## 5. Run OpenClaw through Sesame
+
+```bash
+sesame launch -- openclaw gateway run
+```
+
+That's the whole integration — no changes to OpenClaw's code. Its egress now flows: **agent → local edge proxy → Sesame broker → provider.**
+
+<Tip>
+  Make it durable: set this as the `ExecStart` of your service manager (e.g. a systemd unit) so it survives reboots and restarts cleanly.
+</Tip>
+
+## 6. Use it
+
+Message your agent. The **first call to each brokered host** raises an approval in your dashboard — approve it, and the broker injects your real key and the call succeeds. Non-brokered hosts pass straight through.
+
+<Note>
+  Every brokered call prompts by default. Set an **auto-approve policy** on your model host so chat isn't gated on every turn, and keep **per-call approval on side-effecting hosts** like Stripe.
+</Note>
+
+## Verify it's keyless
+
+OpenClaw stores provider credentials in its agent SQLite store, not a plaintext file:
+
+```bash
+DB=~/.openclaw/agents/main/agent/openclaw-agent.sqlite
+sqlite3 -header -column "$DB" "SELECT * FROM auth_profile_store;"
+```
+
+You should see only your **placeholder** value. The real key exists only in Sesame's vault, injected per approved call. Also clear any leftover keys from earlier setups (e.g. an unused OpenAI key in `~/.openclaw/agents/main/agent/codex-home/auth.json`) so OpenClaw is fully keyless.

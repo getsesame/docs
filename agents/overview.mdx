@@ -1,0 +1,74 @@
+---
+title: "Transparent Egress: Run Any Agent With Zero Keys"
+sidebarTitle: "Overview"
+description: "Wrap any agent with `sesame launch` so every call to a brokered API is injected server-side. No code changes, no API keys in the agent — Sesame is the broker."
+---
+
+`sesame launch -- <your agent>` runs your agent with all of its brokered egress routed through Sesame. A local edge proxy intercepts outbound HTTPS, forwards calls to hosts you've stored a secret for to the broker (which injects the credential, gets approval, and audits), and splices everything else straight through. **Your agent holds only dummy placeholders — the real keys live in Sesame and are injected on the wire.**
+
+<Note>
+  This is different from [Agent Skills](/skills/overview). Skills teach an agent to *call* `sesame request` itself. Transparent egress requires **no changes to the agent** — it intercepts at the network layer, so the agent never knows Sesame is there.
+</Note>
+
+## How it works
+
+<Steps>
+  <Step title="`sesame launch` starts the edge proxy">
+    It mints a proxy key, fetches your tenant root certificate, and starts the local `sesame-proxyd` edge proxy — then execs your agent with `HTTPS_PROXY` pointed at the proxy and the tenant root installed in the agent's trust env (no `sudo`, no OS trust-store edits).
+  </Step>
+  <Step title="Brokered hosts are bumped; everything else splices">
+    For a host you've stored a secret for, the proxy presents a leaf certificate the broker minted, reads the request, and forwards it to the broker's `/v1/proxy/http`. Every other host is an opaque tunnel — never decrypted, never touches the broker.
+  </Step>
+  <Step title="The broker injects, approves, and audits">
+    The broker strips whatever placeholder the agent sent, injects your real credential, applies your approval policy, forwards to the upstream, and logs the call. The secret never crosses back to the agent.
+  </Step>
+</Steps>
+
+## Connect your agent
+
+<CardGroup cols={2}>
+  <Card title="OpenClaw" icon="robot" href="/agents/openclaw">
+    Run your OpenClaw gateway through Sesame — LLM and tool calls injected server-side.
+  </Card>
+  <Card title="Any agent" icon="terminal" href="#universal-steps">
+    Wrap any process that honors `HTTPS_PROXY` with `sesame launch`.
+  </Card>
+</CardGroup>
+
+## Universal steps
+
+<Steps>
+  <Step title="Install the CLI + edge proxy">
+    ```bash
+    curl -fsSL https://getsesame.dev/install.sh | sh
+    sesame proxyd install
+    ```
+  </Step>
+  <Step title="Register the agent">
+    ```bash
+    sesame login
+    ```
+    Approve the device in your [getsesame.dev](https://getsesame.dev) dashboard.
+  </Step>
+  <Step title="Store your keys in Sesame">
+    Add a secret per provider in the dashboard (**Secrets → Add**), scoped to the provider's hostname. See [Providers](/integrations/providers) for presets.
+  </Step>
+  <Step title="Replace the agent's real keys with dummies">
+    So the agent holds nothing real. The exact step depends on the agent (see per-agent guides). When `sesame police --neutralize` ships, this becomes automatic.
+  </Step>
+  <Step title="Launch the agent through Sesame">
+    ```bash
+    sesame launch -- <your agent command>
+    ```
+  </Step>
+</Steps>
+
+## Requirements & gotchas
+
+<Warning>
+  **Your agent's egress must honor `HTTPS_PROXY` and the injected CA.** `sesame launch` sets `HTTPS_PROXY`, `SSL_CERT_FILE`/`NODE_EXTRA_CA_CERTS`, and `NODE_USE_ENV_PROXY=1` on the agent process. Agents that make calls **in-process** (e.g. OpenClaw) are intercepted correctly. Agents that execute tools in a **remote or sandboxed environment off the box** are *not* reached by env-based interception — those need [transparent mode + iptables](https://github.com/getsesame/sesame) on the host where the tool actually runs. Confirm your agent's LLM/tool calls run in-process before relying on `sesame launch`.
+</Warning>
+
+- **Approvals:** every brokered call prompts by default. For your **model host**, set an auto-approve (or long-window) policy so chat flows; keep **per-call approval on side-effecting hosts** (payments, deletes).
+- **Trust:** `sesame launch` appends the tenant root to your system CA bundle, so spliced (non-brokered) hosts keep verifying normally. If a non-brokered host suddenly fails TLS, check your CA env isn't being overridden elsewhere.
+- **Verify it's keyless:** confirm the agent's credential store holds only placeholders (see per-agent guides).
