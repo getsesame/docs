@@ -10,6 +10,10 @@ OpenClaw makes its LLM and tool calls in-process, so it works cleanly with [tran
   This guide uses the **cloud broker** at [getsesame.dev](https://getsesame.dev), so you never run your own broker or hold your own keys. Running your own broker? See [Self-Host](/skills/self-host) — the only difference is `sesame login --broker-url <your-url>`.
 </Note>
 
+<Warning>
+  **Human-in-the-loop.** Several steps hand off to a person in the [getsesame.dev](https://getsesame.dev) dashboard: **approving the device** (step 2), **adding secrets** (step 3), and **approving calls** (steps 4 and 6). The CLI commands **block and wait** for these. If you're an agent running this guide, stop at each hand-off and ask the user to complete the dashboard action before continuing — don't assume it succeeded.
+</Warning>
+
 ## Prerequisites
 
 - An OpenClaw instance you can run (`openclaw gateway run`).
@@ -29,7 +33,11 @@ sesame proxyd install
 sesame login
 ```
 
-Open the printed claim URL and approve the agent in your dashboard.
+`sesame login` prints a claim URL and then **blocks, waiting for approval**.
+
+<Note>
+  **You, in the browser:** open the claim URL, sign in to [getsesame.dev](https://getsesame.dev), and approve the device. The command waits until you approve (it times out after ~15 minutes) and then prints `Agent approved`. Don't move on until you see that.
+</Note>
 
 ## 3. Store your API keys in Sesame
 
@@ -43,6 +51,10 @@ In the dashboard (**Secrets → Add**), add one secret per provider your agent u
 
 The dashboard presets fill in the correct injection mode. Your real key is stored in Sesame's vault — OpenClaw never receives it.
 
+<Note>
+  **You, in the browser** — this is a manual dashboard step, there's no CLI command. Add a secret for each provider your agent will call *before* you launch it.
+</Note>
+
 ## 4. Replace OpenClaw's real keys with dummies
 
 So OpenClaw holds nothing real, overwrite its stored provider key with a placeholder using OpenClaw's own onboarding — run it **under `sesame launch`** so the key-validation call is brokered (your real key is injected) while OpenClaw stores only the dummy.
@@ -55,6 +67,10 @@ sesame launch -- openclaw onboard --non-interactive --accept-risk \
   --auth-choice <provider>-api-key --<provider>-api-key "sesame-managed-placeholder" \
   --skip-channels --skip-daemon --skip-ui --skip-skills --skip-search
 ```
+
+<Note>
+  Running under `sesame launch` means OpenClaw's key-validation call is brokered — so **it raises an approval in the dashboard and waits**. Approve it (**Approvals** tab) for onboarding to finish. OpenClaw ends up storing only the placeholder.
+</Note>
 
 ## 5. Run OpenClaw through Sesame
 
@@ -70,7 +86,11 @@ That's the whole integration — no changes to OpenClaw's code. Its egress now f
 
 ## 6. Use it
 
-Message your agent. The **first call to each brokered host** raises an approval in your dashboard — approve it, and the broker injects your real key and the call succeeds. Non-brokered hosts pass straight through.
+Message your agent. When it calls a brokered host, **the request pauses** and an approval appears in your dashboard.
+
+<Note>
+  **You, in the browser:** open the dashboard's **Approvals** tab, review the pending request, and approve it. The agent's call is held until you do — if you don't approve within ~5 minutes, it fails. Once approved, the broker injects your real key and the call completes. Non-brokered hosts pass straight through with no approval.
+</Note>
 
 <Note>
   Every brokered call prompts by default. Set an **auto-approve policy** on your model host so chat isn't gated on every turn, and keep **per-call approval on side-effecting hosts** like Stripe.

@@ -63,6 +63,10 @@ description: "Wrap any agent with `sesame launch` so every call to a brokered AP
   </Step>
 </Steps>
 
+<Note>
+  **Human-in-the-loop.** `sesame login` (step 2), adding secrets (step 3), and the first call to each brokered host (after launch) all **wait on a person in the [getsesame.dev](https://getsesame.dev) dashboard** — approving the device, adding the secret, and approving the call. `sesame login` and brokered calls *block* until you act. If an agent is running these steps, it should pause and hand off to the user at each point rather than assume success.
+</Note>
+
 ## Requirements & gotchas
 
 <Warning>
