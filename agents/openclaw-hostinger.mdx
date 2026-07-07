@@ -1,75 +1,83 @@
 ---
 title: "Connect a Hostinger-Hosted OpenClaw to Sesame"
 sidebarTitle: "OpenClaw on Hostinger"
-description: "Onboard an OpenClaw instance deployed from Hostinger's managed Docker template — where the commands actually run, two integration paths, and the container quirks you'll hit."
+description: "Onboard an OpenClaw instance deployed from Hostinger's managed Docker template — panel first, container second, and the exact errors you'll hit if you don't."
 ---
 
-Hostinger's one-click OpenClaw runs inside a **managed Docker container**, which changes where every command from the [main OpenClaw guide](/agents/openclaw) runs and how the gateway gets wrapped. This page is that guide, adapted to the template — validated end-to-end on a live Hostinger VPS, including the errors you're likely to hit.
+Hostinger's one-click OpenClaw runs inside a **managed Docker container**, which changes where every command from the [main OpenClaw guide](/agents/openclaw) runs. This page is that guide adapted to the template — validated end-to-end on a live Hostinger VPS, including the failures.
+
+Two facts about the template drive the entire order of operations:
+
+1. **All commands run in the container shell**, not the VPS host shell. The host has no `openclaw`, no `/entrypoint.sh`, and nothing you install there reaches the app.
+2. **Changing any env var in the Hostinger panel recreates the container**, wiping everything installed inside it. Only the `/data` mount survives.
+
+Therefore: **do the dashboard and panel changes first, the container work last.** Get the order wrong and the recreate silently deletes your install (see [Troubleshooting](#troubleshooting), row 4).
 
 <Note>
   This guide uses the **cloud broker** at [getsesame.dev](https://getsesame.dev). Read the [main OpenClaw guide](/agents/openclaw) first for the concepts (secrets, injection, approvals) — this page covers only what Hostinger changes.
 </Note>
 
-## How the Hostinger template is put together
+## 1. Dashboard prep
 
-Knowing the anatomy explains every step below:
+<Note>
+  **You, in the browser** — in [getsesame.dev](https://getsesame.dev) (**Secrets → Add**), add one secret per provider your agent will call, e.g. **OpenAI** (`api.openai.com`, Bearer) and **Stripe** (`api.stripe.com`, Bearer). The presets fill the injection mode. Secrets live in your Sesame account, not on the box — they survive anything Hostinger does.
+</Note>
 
-- OpenClaw runs in a Docker container from Hostinger's template. The compose project lives at `/docker/openclaw-<suffix>/` on the VPS and the container is named `openclaw-<suffix>-openclaw-1`. **The suffix changes when the panel redeploys the app** — treat it as ephemeral.
-- The container's `/entrypoint.sh` fixes `/data` ownership, then hands off with `exec runuser -u node -- "$@"` — so the app (`node server.mjs`, which supervises the `openclaw` gateway) runs as the **`node` user (uid 1000)** with its home on the persistent `/data` mount. Root only appears for the brief hand-off.
-- Provider API keys come from **container env vars owned by Hostinger's panel** (`OPENAI_API_KEY`, `GEMINI_API_KEY`, ...). The panel's hint text lists only five providers, but the template's provisioner (`/hostinger/server.mjs`) also honors `MISTRAL_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`, and more.
-- The panel is the durable source of env config. Hand-edits to the generated `docker-compose.yml` are **overwritten on redeploys**, and a redeploy creates a fresh project dir and wipes the old container (we watched a redeploy rename `openclaw-c6xl` → `openclaw-mlvx` and reset everything with it).
+## 2. Panel prep (if going keyless on the LLM)
 
-## Step 0 — get into the *container* shell, not the VPS shell
+<Note>
+  **You, in the browser** — in Hostinger's hPanel, replace the provider key field (e.g. `OPENAI_API_KEY`) with `sesame-managed-placeholder`. **This recreates the container — that's expected.** Wait for the app to come back up before continuing. Doing it now, before any container work, is the whole point of the ordering.
+</Note>
 
-There are three different "terminals" in a Hostinger setup, and picking the wrong one is the most common failure:
+OpenClaw keeps the provider enabled as long as *a* value is present; from step 6 onward the broker strips the placeholder and injects your real key on the wire.
 
-1. **VPS host shell** (`root@srv...`) — Docker plumbing only. `openclaw` and `/entrypoint.sh` don't exist here.
-2. **Container shell** (`root@<hex-id>`) — **all Sesame commands run here.** Hostinger's browser terminal drops you straight into the container; from the VPS shell, `docker exec -it openclaw-<suffix>-openclaw-1 bash` does the same.
-3. **OpenClaw chat UI** — the agent, never a shell for setup commands.
+## 3. Enter the container shell
 
-Verify you're in the right place before anything else:
+Hostinger's browser terminal drops you **inside the container as root**. From the VPS host shell instead: `docker exec -it openclaw-<suffix>-openclaw-1 bash` (find the name with `docker ps`). The OpenClaw chat UI is never a setup shell.
+
+Verify before anything else:
 
 ```bash
 which openclaw && tail -1 /entrypoint.sh
 ```
 
-If that prints the `openclaw` path and an `exec runuser -u node -- "$@"` line, you're inside the container. If you get `openclaw: command not found`, you're still on the VPS host.
+`openclaw`'s path plus an `exec runuser -u node -- "$@"` line → you're inside. `openclaw: command not found` → you're still on the host.
 
 <Warning>
-  **If you're an agent running this onboarding:** confirm the container shell first (the check above), and stop and hand off to the user at every dashboard pause below — device approval, adding the secret, and approving calls. The CLI commands block and wait; don't assume they succeeded.
+  **Enter the shell first, then run commands.** Don't paste a block that *starts* with `docker exec -it ... bash` followed by more lines — the later lines race the shell startup and execute on the **host** (this bit us live: `sesame` got installed on the VPS instead of the container, and the app crash-looped). One command at a time until your prompt is `root@<hex-id>`.
+
+  **If you're an agent running this onboarding:** confirm the container shell with the check above, and stop and hand off to the user at every 👤 dashboard pause — the CLI commands block and wait; don't assume they succeeded.
 </Warning>
 
-## Fix two container quirks first
+## 4. Install + one-time container fixes
 
-The template's container lacks pieces the Sesame CLI expects. Run both fixes as root in the container shell — they're one-time:
-
-```bash
-# Sesame state dirs must belong to the node user (the app's user):
-mkdir -p /data/.config /data/.local
-chown -R node:node /data/.config /data/.local
-
-# No systemd in containers, so the per-user runtime dir doesn't exist:
-mkdir -p /run/user/1000 && chown node:node /run/user/1000 && chmod 700 /run/user/1000
-```
-
-Skip these and `sesame login` dies with the permission errors listed in [Troubleshooting](#troubleshooting) below.
-
-## Install and register
+As root, in the container shell:
 
 ```bash
 curl -fsSL https://getsesame.dev/install.sh | sh
+
+# Sesame state dirs must belong to the node user (the app's user, HOME=/data):
+mkdir -p /data/.config /data/.local && chown -R node:node /data/.config /data/.local
+
+# Containers have no systemd/logind, so the per-user runtime dir doesn't exist:
+mkdir -p /run/user/1000 && chown node:node /run/user/1000 && chmod 700 /run/user/1000
+```
+
+Skip the fixes and `sesame login` dies with the `PermissionError` tracebacks in [Troubleshooting](#troubleshooting).
+
+## 5. Register as the app user
+
+```bash
 runuser -u node -- sesame login
 ```
 
 <Note>
-  **Why `runuser -u node --`?** The agent runs as the `node` user (check: `ps aux | grep openclaw` shows uid 1000), and Sesame reads its device identity from the home of whoever runs it. Register as root and the agent can't see or read the identity — it fails on first use. Create the identity as the user that will consume it.
+  **You, in the browser:** `login` prints a claim URL and **blocks** — open it, sign in to [getsesame.dev](https://getsesame.dev), approve the device, wait for `Agent approved`.
 </Note>
 
 <Note>
-  **You, in the browser:** `sesame login` prints a claim URL and **blocks** — open it, sign in to [getsesame.dev](https://getsesame.dev), approve the device, and wait for `Agent approved`.
+  **Why `runuser -u node --`?** The gateway and its exec tool run as the `node` user (`ps aux` shows uid 1000), and Sesame reads its device identity from the home of whoever runs it. Register as root and the identity is invisible to the agent — it fails on first use. Create the identity as the user that will consume it.
 </Note>
-
-Then add your secret in the dashboard (**Secrets → Add** — e.g. the Stripe preset, `api.stripe.com`, Bearer). Secrets live in your Sesame account, not on the box.
 
 ## Choose your integration path
 
@@ -78,27 +86,27 @@ Then add your secret in the dashboard (**Secrets → Add** — e.g. the Stripe p
     The agent calls Sesame as a shell tool when told to. No proxy, no restart, nothing changed about OpenClaw. Right for trying Sesame out.
   </Card>
   <Card title="Full path: transparent egress" icon="shield-check" href="#full-path-transparent-egress">
-    Every outbound call intercepted at the wire — enforced, not opt-in, and covers the LLM key too. Needs one entrypoint edit + a restart.
+    Every outbound call intercepted at the wire — enforced, not opt-in, and covers the LLM key too. One entrypoint edit + a restart.
   </Card>
 </CardGroup>
 
 ## Quick path: `sesame request`
 
-Nothing else to set up. Test it yourself first, as the same user the agent runs as:
+No proxy needed — skip `proxyd` entirely. Test as the same user the agent runs as:
 
 ```bash
 runuser -u node -- sesame request GET https://api.stripe.com/v1/balance
 ```
 
 <Note>
-  **You, in the browser:** the request pauses and an approval appears in the dashboard's **Approvals** tab. Approve it — the broker injects the real key server-side and the balance prints in your terminal.
+  **You, in the browser:** the request pauses; approve it in the dashboard's **Approvals** tab. The broker injects the real key server-side and the balance prints in your terminal.
 </Note>
 
 Then have the agent do the same. In the OpenClaw chat:
 
 > When you need to call the Stripe API, run `sesame request GET https://api.stripe.com/v1/balance` in the shell — you don't have a Stripe key; auth is handled externally. What's my account balance?
 
-The agent execs the command (as `node` — which is why the identity had to be node's), the approval pops, you approve, and it reads the balance back. No gateway restart at any point: the agent spawns fresh shells per command, so they see the CLI and identity immediately.
+No gateway restart at any point: the agent spawns fresh shells per command, so they see the CLI and identity immediately.
 
 <Warning>
   **The trade-off:** this mode is opt-in. The agent uses Sesame because it's told to — nothing at the network layer forces it, and direct HTTP calls (including its LLM traffic) bypass the broker entirely. For enforcement, use the full path.
@@ -106,7 +114,7 @@ The agent execs the command (as `node` — which is why the identity had to be n
 
 ## Full path: transparent egress
 
-On a normal host this is `sesame launch -- openclaw gateway run` ([main guide, step 5](/agents/openclaw#5-run-openclaw-through-sesame)). **On Hostinger you can't type that** — the template's supervisor already runs the gateway, so a manual launch fails with `EADDRINUSE: address already in use 127.0.0.1:18789`. The wrapper has to go where the gateway is actually started: the container's entrypoint.
+On a normal host this is `sesame launch -- openclaw gateway run` ([main guide, step 5](/agents/openclaw#5-run-openclaw-through-sesame)). **On Hostinger you can't type that** — the template's supervisor already runs the gateway, so a manual launch fails with `EADDRINUSE: address already in use 127.0.0.1:18789`. The wrapper goes where the gateway is actually started: the container's entrypoint.
 
 <Steps>
   <Step title="Install the edge proxy">
@@ -115,39 +123,38 @@ On a normal host this is `sesame launch -- openclaw gateway run` ([main guide, s
     ```
   </Step>
   <Step title="Wrap the entrypoint">
-    One sed, run as root in the container shell. It inserts the `sesame launch` wrapper into the existing hand-off line, and recreates the runtime dir on every boot (`/run` is a tmpfs — it empties on restart):
+    One sed, as root in the container shell:
 
     ```bash
-    sed -i 's|exec runuser -u node -- "\$@"|mkdir -p /run/user/1000 \&\& chown node:node /run/user/1000\nexec runuser -u node -- sesame launch -- "$@"|' /entrypoint.sh
+    sed -i 's|exec runuser -u node -- "\$@"|mkdir -p /run/user/1000 \&\& chown node:node /run/user/1000\nexec runuser -u node -- /usr/local/bin/sesame launch -- "$@"|' /entrypoint.sh
     tail -3 /entrypoint.sh   # verify: the mkdir line + exec ... sesame launch -- "$@"
     ```
-  </Step>
-  <Step title="Go keyless on the LLM (optional but the point)">
-    Put the real provider key in the dashboard (**Secrets → Add → OpenAI**, `api.openai.com`, Bearer), then replace the key in **Hostinger's panel env field** (e.g. `OPENAI_API_KEY`) with `sesame-managed-placeholder`. OpenClaw keeps the provider enabled; the broker injects the real key per call.
+
+    Two details are load-bearing: the **mkdir is baked in** because `/run` is a tmpfs that empties on every boot, and the **absolute path** `/usr/local/bin/sesame` is used because the boot-time `PATH` differs from your interactive shell's.
   </Step>
   <Step title="Restart the app">
-    Use the Hostinger panel's restart button (or `kill 1` in the container shell — the supervisor brings it back). The gateway reboots *through* `sesame launch`: proxy env and CA are set at process birth, which is why a restart is required and no earlier step needed one.
+    Hostinger panel restart button, or `kill 1` in the container shell, or `docker restart <container>` from the host — all equivalent. The gateway reboots *through* `sesame launch`: proxy env and CA are set at process birth, which is why a restart is required here and nowhere else.
   </Step>
-  <Step title="Set the model-host policy immediately">
-    Send a chat message → the model call pauses → approve it in the dashboard to prove the loop. Then set an **auto-approve policy on your model host** right away — model calls fire on every turn, and per-call approvals make chat unusable. Keep per-call approval on side-effecting hosts like Stripe.
+  <Step title="Prove it, then set the model-host policy">
+    Send a chat message → the model call pauses → **You, in the browser:** approve it at [getsesame.dev](https://getsesame.dev). The reply arrives with your real key injected server-side. Then **immediately set an auto-approve policy on your model host** — model calls fire on every turn, and per-call approvals make chat unusable. Keep per-call approval on side-effecting hosts like Stripe.
   </Step>
 </Steps>
 
-<Warning>
-  **Redeploys reset the integration.** A panel redeploy regenerates the project (new suffix, fresh container, fresh `/data`): the entrypoint edit, the installed CLI, and the device identity are all gone. Re-run this page's steps and re-approve the device — it takes a couple of minutes. Your secrets and policies live in your Sesame account and survive untouched.
-</Warning>
+<Note>
+  **The mental model:** OpenClaw never learns Sesame exists. There is no fallback setting to configure — it keeps sending the placeholder key exactly as before. The edge proxy intercepts the call, and the broker strips the placeholder and injects the real key on the wire. OpenAI sees a valid request; OpenClaw sees a normal response.
+</Note>
 
 ## Verify it's keyless
 
-This template's OpenClaw keeps its state in a different place than the main guide shows, and the table name differs too (`auth_profile_stores`, plural). Don't hardcode paths — find the DB, list its tables, then query read-only (the live gateway is writing to it):
+This template stores OpenClaw state at `/data/.openclaw/state/openclaw.sqlite` and names the credential table `auth_profile_stores` (plural) — both differ from the main guide. Don't hardcode; find, list, then query read-only (the live gateway is writing to it):
 
 ```bash
-DB=$(find /data/.openclaw -name '*.sqlite' 2>/dev/null | head -1)   # e.g. /data/.openclaw/state/openclaw.sqlite
+DB=$(find /data/.openclaw -name '*.sqlite' 2>/dev/null | head -1)
 sqlite3 "file:$DB?mode=ro" ".tables"
 sqlite3 -header -column "file:$DB?mode=ro" "SELECT * FROM auth_profile_stores;"
 ```
 
-You want to see placeholders (or nothing) — the real keys exist only in Sesame's vault. Also check the panel's env fields hold only `sesame-managed-placeholder` values.
+You want placeholders or nothing — the real keys exist only in Sesame's vault. Also confirm the panel's env fields hold only `sesame-managed-placeholder` values.
 
 ## Troubleshooting
 
@@ -155,10 +162,9 @@ Errors hit on a real Hostinger onboarding, verbatim, with fixes:
 
 | Error | Cause → Fix |
 | --- | --- |
-| `PermissionError: [Errno 13] Permission denied: '/data/.config/sesame'` | Root-owned dirs on the data mount → `mkdir -p /data/.config /data/.local && chown -R node:node /data/.config /data/.local` |
-| `FileNotFoundError: '/run/user/1000/sesame'` then `PermissionError: '/run/user/1000'` | No systemd/logind in containers, so the runtime dir doesn't exist → `mkdir -p /run/user/1000 && chown node:node /run/user/1000 && chmod 700 /run/user/1000`. The full-path sed recreates it each boot. |
-| `EADDRINUSE: address already in use 127.0.0.1:18789` when running `openclaw gateway run` or `sesame launch -- openclaw gateway run` by hand | The template's supervisor already runs the gateway — you can't start a second one. Use the entrypoint sed + panel restart instead. |
-| `openclaw: command not found` | You're on the VPS host shell, not in the container. See [Step 0](#step-0-—-get-into-the-container-shell-not-the-vps-shell). |
-| `openclaw onboard` ends with `Gateway did not become reachable ... scope upgrade pending approval` | Harmless — the config was already written (`Updated config: ~/.openclaw/openclaw.json`); only onboard's final health probe was gated. Don't start a second gateway to "fix" it. |
-| Verify query returns `no such table: auth_profile_store` | This build uses `auth_profile_stores` (plural) at `/data/.openclaw/state/openclaw.sqlite` — use the find + `.tables` approach above. |
-| Everything gone after a panel update | That was a redeploy (new `openclaw-<suffix>`). Re-run the setup; secrets/policies in your Sesame account are intact. |
+| `PermissionError: [Errno 13] Permission denied: '/data/.config/sesame'` | Root-owned dirs on the data mount → the `chown` fix in [step 4](#4-install--one-time-container-fixes). |
+| `FileNotFoundError: '/run/user/1000/sesame'` then `PermissionError: '/run/user/1000'` | No systemd/logind in containers → the `mkdir` fix in [step 4](#4-install--one-time-container-fixes). The entrypoint sed re-creates it on every boot. |
+| `EADDRINUSE: address already in use 127.0.0.1:18789` | Never run `openclaw gateway run` or `sesame launch -- openclaw gateway run` by hand — the template supervises the gateway. Use the entrypoint sed + restart. |
+| Crash loop: `runuser: failed to execute /usr/local/bin/sesame: No such file or directory` | The install is missing inside the container — usually a panel env change recreated the container *after* you installed, or the paste race installed onto the host. Recover **without entering the crash-looping container**: install on the VPS host (`curl -fsSL https://getsesame.dev/install.sh \| sh`), then `docker cp /usr/local/lib/sesame <container>:/usr/local/lib/` and `docker restart <container>`. Copy the **whole directory**: `/usr/local/bin/sesame` is a symlink into `/usr/local/lib/sesame/` — copying just it ships a dangling 1.5 kB link ("Successfully copied 1.54kB" is the tell) and the loop continues. |
+| `openclaw: command not found` | You're on the VPS host shell, not in the container — see [step 3](#3-enter-the-container-shell). |
+| Everything gone after a container recreate | `/data` survives (device identity and login included — no re-approval needed), but the CLI install and the entrypoint edit are gone. Redo step 4's install line and the sed, then restart. Secrets and policies live in your Sesame account and always survive. |
