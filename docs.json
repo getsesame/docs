@@ -47,7 +47,8 @@
             "group": "Connect an Agent",
             "pages": [
               "agents/overview",
-              "agents/openclaw"
+              "agents/openclaw",
+              "agents/openclaw-hostinger"
             ]
           },
           {
