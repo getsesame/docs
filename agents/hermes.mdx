@@ -1,59 +1,35 @@
 ---
 title: "Connect Hermes to Sesame: Transparent Egress on a Self-Hosted Box"
 sidebarTitle: "Hermes"
-description: "Wrap the Hermes gateway with `sesame launch` so its in-process LLM calls egress through your broker. Validated live on a self-hosted EC2 deployment against a local broker — with the exact human gates that remain."
+description: "Wrap the Hermes gateway with `sesame launch` so its in-process LLM calls egress through your broker. Validated live on a self-hosted deployment: LLM/tool calls confirmed in-process and the gateway wrapped at the wire."
 ---
 
 Hermes makes its LLM and tool calls **in-process** on the box where its gateway runs, so it fits the [transparent egress](/agents/overview) path: wrap the gateway with `sesame launch` and its model traffic is intercepted at the wire, forwarded to your broker, and the real credential is injected server-side after your approval.
 
-This page is written from a **live, read-only validation** of a real Hermes deployment — a self-hosted Hermes Agent (v0.17.0) on EC2, running its own Sesame broker in Docker rather than the cloud broker. It documents exactly what was proven, the human gates that remain, and the one credential the broker still needs before an end-to-end model call succeeds.
+This page is written from a **live, read-only validation** of a real Hermes deployment — a self-hosted Hermes Agent (v0.17.0) on EC2, running its own Sesame broker in Docker rather than the cloud broker. It documents the transparent-egress path, the human gates it involves, and the one credential your broker needs before an end-to-end model call succeeds.
 
 <Note>
   **This deployment uses a self-hosted broker**, not the cloud broker at [getsesame.dev](https://getsesame.dev). The gateway's proxy points at a local broker (`sesame-proxyd --broker-url http://localhost:8000`), and the box already carries a valid device identity from an earlier setup. If you're following the standard cloud-broker flow instead, the concepts are identical — see the [OpenClaw guide](/agents/openclaw) — but the install/login steps differ (`sesame login --broker-url <your-url>`; see [Self-Host](/skills/self-host)).
 </Note>
 
 <Warning>
-  **Human-in-the-loop.** Two hand-offs remain before this integration is proven end-to-end and made durable:
-
-  1. **Add an `api.anthropic.com` secret** in your self-hosted dashboard (the broker currently denies Anthropic calls — see [Status](#validation-status)).
-  2. **Approve the durable-unit cutover** — replacing the manually-started wrapped process with a systemd unit briefly restarts the messaging gateway.
-
-  If you're an agent running this guide, **stop at each 👤 hand-off** and ask the user to complete the dashboard/approval action. Don't assume it succeeded.
+  **Human-in-the-loop.** Several steps hand off to a person: **adding the model-host secret** in your dashboard (step 3), **approving the durability cutover** (steps 4–5 briefly restart the gateway), and **approving the first brokered call** (step 6). If you're an agent running this guide, stop at each 👤 hand-off and ask the user to complete the dashboard/approval action — don't assume it succeeded.
 </Warning>
 
 ## Where does Hermes run its calls?
 
 This is the crux of whether transparent egress works at all, and it was the decisive unknown going in. An earlier attempt on a *different* machine saw Hermes running its tool commands off-box in a managed exec sandbox (host `ip-172-31-25-14`, no proxy env), which breaks env-based `sesame launch` wrapping — env vars set on a local process never reach a call made on another machine.
 
-**On this box, that concern is refuted.** Live inspection proved both loci are in-process:
+So the first thing to check is where **your** Hermes runs its calls. On the deployment this page was validated against, both loci were in-process — here's what to look for:
 
-- **LLM calls are in-process.** The gateway process (`python -m hermes_cli.main --profile coder gateway run`) is the process that selects and calls the model provider — `config.yaml` sets `model.provider: anthropic`, `base_url: https://api.anthropic.com`, `model: claude-opus-4-8`, and `agent.log` records `Vision auto-detect: using main provider anthropic (claude-opus-4-8)`. The gateway's own environment holds **no** provider API key, so it depends entirely on the proxied path.
-- **Tool/terminal execution is local.** `terminal.backend: local`, `modal_mode: off`, `browser.cloud_provider: local`, `TERMINAL_ENV=local`. Tools spawn as child subprocesses of the gateway on this box — not off-box.
-- **The historical off-box host is dead prose.** The name `ip-172-31-25-14` appears only inside stored conversation/memory text in `state.db`, never in any active config. The live host is `ip-172-31-22-70`.
+- **LLM calls in-process.** The gateway process (`python -m hermes_cli.main --profile <profile> gateway run`) is the one that selects and calls the model provider — `config.yaml` sets `model.provider`, `base_url`, `model`, and the gateway's own environment holds **no** provider API key, so it depends entirely on the proxied path. That's the signal `sesame launch` can reach it.
+- **Tool/terminal execution local.** `terminal.backend: local`, `modal_mode: off`, `browser.cloud_provider: local` — tools spawn as child subprocesses of the gateway on the same box, not off-box.
+
+If instead your config shows an off-box exec sandbox, the env-based wrap won't reach calls made there (see the note below).
 
 <Note>
   **Why this matters:** transparent egress (`sesame launch`) only intercepts calls made **in-process** on the wrapped box. Because Hermes's model calls are in-process here, `sesame launch` reaches them. If your Hermes were configured with an off-box exec sandbox (`modal_mode: on`, a remote `terminal.backend`), the env-based wrap would **not** reach tool calls made there — you'd need [transparent mode + iptables](https://github.com/getsesame/sesame) on the actual exec host. **Confirm your `terminal.backend`/`modal_mode` before relying on this page.**
 </Note>
-
-## What's already in place
-
-On this deployment the transparent wrap was **already hand-applied** and running — this validation confirmed it works and mapped what remains. Your box may be starting from scratch; the [full runbook](#runbook-transparent-egress) below covers both.
-
-The live gateway is a child of a `sesame launch` wrapper:
-
-```
-sesame launch -- <hermes-venv>/python -m hermes_cli.main --profile coder gateway run
-```
-
-which spawned `sesame-proxyd` (listening on `127.0.0.1:14322`) and injected onto the gateway process:
-
-- `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` → the local proxy at `127.0.0.1:14322`
-- `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE` / `NODE_EXTRA_CA_CERTS` / `GIT_SSL_CAINFO` → the tenant edge CA (`edge-root.pem`)
-- `NO_PROXY=localhost,127.0.0.1,::1`, `NODE_USE_ENV_PROXY=1`
-
-**Proof the interception is real:** the gateway holds **no direct remote sockets** — every outbound connection it owns goes to `127.0.0.1:14322` (the proxy). Any Anthropic call it makes is necessarily captured by the local proxy.
-
-A deliberate config fix was also applied (backups `config.yaml.bak.presesame` / `.envpassthrough` / `.execlocal`) that adds `terminal.env_passthrough`, forwarding the proxy + CA env into locally-spawned tool subprocesses — so wrapped **tool** HTTP calls stay proxied too, not just the model call.
 
 ## Prerequisites
 
@@ -102,7 +78,7 @@ A deliberate config fix was also applied (backups `config.yaml.bak.presesame` / 
 
   <Step title="Add the model host's secret in the broker">
     <Note>
-      **👤 You, in the browser** — this is the blocking gate. In your **self-hosted** dashboard (`/credentials/secrets`), add a hostname + secret for **`api.anthropic.com`** with an **Anthropic** preset. Until this exists, brokered Anthropic calls are **denied** (proven — see [Status](#validation-status)). The cloud-broker equivalent is **Secrets → Add**.
+      **👤 You, in the browser** — this is the blocking gate. In your **self-hosted** dashboard (`/credentials/secrets`), add a hostname + secret for **`api.anthropic.com`** with an **Anthropic** preset. Until this exists, brokered calls to that host are **denied** by the broker (proven live). The cloud-broker equivalent is **Secrets → Add**.
     </Note>
 
     Confirm the broker now allows the host:
@@ -165,28 +141,9 @@ A deliberate config fix was also applied (backups `config.yaml.bak.presesame` / 
   </Step>
 </Steps>
 
-## Validation status
-
-This runbook was validated **read-only** on the live box. Here's exactly what was proven versus what is pending a human action.
-
-| What | Status |
-| --- | --- |
-| Box reachable; host is `ip-172-31-22-70` (not the old off-box `ip-172-31-25-14`) | ✅ Proven |
-| LLM calls are **in-process** on the box | ✅ Proven |
-| Tool/terminal exec is **local** (not off-box) | ✅ Proven |
-| Transparent wrap is **already applied**: gateway runs under `sesame launch`, proxy + CA env injected, all egress via `127.0.0.1:14322` | ✅ Proven |
-| Device identity valid (`sesame status`: fingerprint present, 1 active agent, tokens present) | ✅ Proven — **no login/claim gate** |
-| Self-hosted broker healthy (`localhost:8000/health` → 200) | ✅ Proven |
-| End-to-end Anthropic call succeeds | ⛔ **Blocked** — broker has no `api.anthropic.com` secret |
-| Durable systemd unit carries the wrapper | ⛔ **Pending** — unit still raw + failed + disabled; needs the approved edit + cutover |
-
-<Warning>
-  **The blocking gate, precisely.** The broker's allowlist currently contains only `api.stripe.com` and `generativelanguage.googleapis.com`. A brokered Anthropic probe was cleanly **denied**:
-
-  > `Error: Secret not found for hostname 'api.anthropic.com'. Create it in the Sesame dashboard at /credentials/secrets.` *(Request ID `9804ce51-…`)*
-
-  This is a **broker policy gate, not a code problem** — the transparent plumbing is correct and proven; the broker simply has no Anthropic credential to inject yet. Add it ([step 3](#runbook-transparent-egress)) to finish proving the path end-to-end.
-</Warning>
+<Note>
+  **Validated on a live deployment.** The plumbing in this runbook was verified read-only on a real self-hosted Hermes Agent on EC2: LLM and tool calls confirmed **in-process**, the gateway wrapped under `sesame launch` with all egress via the local proxy (no direct remote sockets), and the broker correctly **denying** a model call until the host's secret is added. The one step that needs a credential you supply — the model-host secret (step 3) — is the gate between "plumbing proven" and "end-to-end reply."
+</Note>
 
 ## What this covers — and what it does not
 
@@ -217,5 +174,5 @@ To reproduce the prior live state instead (manual wrapped process), re-run the [
 </Note>
 
 <Warning>
-  **Security note.** During read-only inspection the `sesame` proxy token was visible in `/proc/<pid>/environ`. Treat it as exposed and **rotate it**. Never print token/secret values when following this guide — refer to them by name only.
+  **Security note.** `sesame launch` places the proxy token in the wrapped process's environment, so it is visible to anyone who can read that process's `/proc/<pid>/environ` (root, or the gateway's own user). Never print token/secret values when following this guide — refer to them by name — and rotate the proxy token if it may have been exposed.
 </Warning>
