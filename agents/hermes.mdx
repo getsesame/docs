@@ -1,0 +1,221 @@
+---
+title: "Connect Hermes to Sesame: Transparent Egress on a Self-Hosted Box"
+sidebarTitle: "Hermes"
+description: "Wrap the Hermes gateway with `sesame launch` so its in-process LLM calls egress through your broker. Validated live on a self-hosted EC2 deployment against a local broker — with the exact human gates that remain."
+---
+
+Hermes makes its LLM and tool calls **in-process** on the box where its gateway runs, so it fits the [transparent egress](/agents/overview) path: wrap the gateway with `sesame launch` and its model traffic is intercepted at the wire, forwarded to your broker, and the real credential is injected server-side after your approval.
+
+This page is written from a **live, read-only validation** of a real Hermes deployment — a self-hosted Hermes Agent (v0.17.0) on EC2, running its own Sesame broker in Docker rather than the cloud broker. It documents exactly what was proven, the human gates that remain, and the one credential the broker still needs before an end-to-end model call succeeds.
+
+<Note>
+  **This deployment uses a self-hosted broker**, not the cloud broker at [getsesame.dev](https://getsesame.dev). The gateway's proxy points at a local broker (`sesame-proxyd --broker-url http://localhost:8000`), and the box already carries a valid device identity from an earlier setup. If you're following the standard cloud-broker flow instead, the concepts are identical — see the [OpenClaw guide](/agents/openclaw) — but the install/login steps differ (`sesame login --broker-url <your-url>`; see [Self-Host](/skills/self-host)).
+</Note>
+
+<Warning>
+  **Human-in-the-loop.** Two hand-offs remain before this integration is proven end-to-end and made durable:
+
+  1. **Add an `api.anthropic.com` secret** in your self-hosted dashboard (the broker currently denies Anthropic calls — see [Status](#validation-status)).
+  2. **Approve the durable-unit cutover** — replacing the manually-started wrapped process with a systemd unit briefly restarts the messaging gateway.
+
+  If you're an agent running this guide, **stop at each 👤 hand-off** and ask the user to complete the dashboard/approval action. Don't assume it succeeded.
+</Warning>
+
+## Where does Hermes run its calls?
+
+This is the crux of whether transparent egress works at all, and it was the decisive unknown going in. An earlier attempt on a *different* machine saw Hermes running its tool commands off-box in a managed exec sandbox (host `ip-172-31-25-14`, no proxy env), which breaks env-based `sesame launch` wrapping — env vars set on a local process never reach a call made on another machine.
+
+**On this box, that concern is refuted.** Live inspection proved both loci are in-process:
+
+- **LLM calls are in-process.** The gateway process (`python -m hermes_cli.main --profile coder gateway run`) is the process that selects and calls the model provider — `config.yaml` sets `model.provider: anthropic`, `base_url: https://api.anthropic.com`, `model: claude-opus-4-8`, and `agent.log` records `Vision auto-detect: using main provider anthropic (claude-opus-4-8)`. The gateway's own environment holds **no** provider API key, so it depends entirely on the proxied path.
+- **Tool/terminal execution is local.** `terminal.backend: local`, `modal_mode: off`, `browser.cloud_provider: local`, `TERMINAL_ENV=local`. Tools spawn as child subprocesses of the gateway on this box — not off-box.
+- **The historical off-box host is dead prose.** The name `ip-172-31-25-14` appears only inside stored conversation/memory text in `state.db`, never in any active config. The live host is `ip-172-31-22-70`.
+
+<Note>
+  **Why this matters:** transparent egress (`sesame launch`) only intercepts calls made **in-process** on the wrapped box. Because Hermes's model calls are in-process here, `sesame launch` reaches them. If your Hermes were configured with an off-box exec sandbox (`modal_mode: on`, a remote `terminal.backend`), the env-based wrap would **not** reach tool calls made there — you'd need [transparent mode + iptables](https://github.com/getsesame/sesame) on the actual exec host. **Confirm your `terminal.backend`/`modal_mode` before relying on this page.**
+</Note>
+
+## What's already in place
+
+On this deployment the transparent wrap was **already hand-applied** and running — this validation confirmed it works and mapped what remains. Your box may be starting from scratch; the [full runbook](#runbook-transparent-egress) below covers both.
+
+The live gateway is a child of a `sesame launch` wrapper:
+
+```
+sesame launch -- <hermes-venv>/python -m hermes_cli.main --profile coder gateway run
+```
+
+which spawned `sesame-proxyd` (listening on `127.0.0.1:14322`) and injected onto the gateway process:
+
+- `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` → the local proxy at `127.0.0.1:14322`
+- `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE` / `NODE_EXTRA_CA_CERTS` / `GIT_SSL_CAINFO` → the tenant edge CA (`edge-root.pem`)
+- `NO_PROXY=localhost,127.0.0.1,::1`, `NODE_USE_ENV_PROXY=1`
+
+**Proof the interception is real:** the gateway holds **no direct remote sockets** — every outbound connection it owns goes to `127.0.0.1:14322` (the proxy). Any Anthropic call it makes is necessarily captured by the local proxy.
+
+A deliberate config fix was also applied (backups `config.yaml.bak.presesame` / `.envpassthrough` / `.execlocal`) that adds `terminal.env_passthrough`, forwarding the proxy + CA env into locally-spawned tool subprocesses — so wrapped **tool** HTTP calls stay proxied too, not just the model call.
+
+## Prerequisites
+
+- **Shell/SSH access to the Hermes host** (the commands below run in a terminal on that box, not in the Hermes dashboard/chat).
+- A running Hermes gateway you can restart (`hermes ... gateway run`), and its profile (here: `coder`).
+- The Sesame CLI on the box, and a broker it points at. On this deployment: `sesame` v0.3.48 in a venv (not on `PATH`) and a self-hosted broker in Docker (`sesame-broker` at `localhost:8000`).
+- A valid Sesame device identity for the user the gateway runs as (`ubuntu`). Here it already exists — `sesame status` shows a device fingerprint, one active agent, and tokens present.
+
+<Note>
+  On this box neither `hermes` nor `sesame` is on the default `PATH` — both live in venvs (`~/sesame/.venv/bin/sesame`, `~/.hermes/hermes-agent/venv/bin`). **Use absolute paths** in every command and in the systemd unit; do not rely on `PATH` lookup.
+</Note>
+
+## Runbook: transparent egress
+
+<Steps>
+  <Step title="Confirm the gateway is wrapped (or wrap it)">
+    Check whether the live gateway already runs under `sesame launch`:
+
+    ```bash
+    ps -o pid,ppid,cmd $(pgrep -f 'hermes_cli.main.*gateway run')
+    ```
+
+    A parent process of `sesame launch -- ... gateway run` plus a `sesame-proxyd` listening on `127.0.0.1:14322` means it's wrapped. If it isn't, start it wrapped (absolute paths):
+
+    ```bash
+    /home/ubuntu/sesame/.venv/bin/sesame launch -- \
+      /home/ubuntu/.hermes/hermes-agent/venv/bin/python \
+      -m hermes_cli.main --profile coder gateway run
+    ```
+  </Step>
+
+  <Step title="Verify the injection">
+    Confirm the proxy + CA env landed on the gateway (names only — never print token values):
+
+    ```bash
+    sudo tr '\0' '\n' < /proc/<gateway-pid>/environ \
+      | grep -E 'HTTPS_PROXY|REQUESTS_CA_BUNDLE|NODE_EXTRA_CA_CERTS'
+    ```
+
+    Then confirm all its egress goes through the proxy — it should show sockets **only** to `127.0.0.1:14322`:
+
+    ```bash
+    ss -tnp | grep <gateway-pid>
+    ```
+  </Step>
+
+  <Step title="Add the model host's secret in the broker">
+    <Note>
+      **👤 You, in the browser** — this is the blocking gate. In your **self-hosted** dashboard (`/credentials/secrets`), add a hostname + secret for **`api.anthropic.com`** with an **Anthropic** preset. Until this exists, brokered Anthropic calls are **denied** (proven — see [Status](#validation-status)). The cloud-broker equivalent is **Secrets → Add**.
+    </Note>
+
+    Confirm the broker now allows the host:
+
+    ```bash
+    /home/ubuntu/sesame/.venv/bin/sesame hostnames   # expect api.anthropic.com to appear
+    ```
+  </Step>
+
+  <Step title="Make the wrap durable (systemd user unit)">
+    The live wrap is a **manually-started detached process** (parent PID 1) with **no unit backing it** — it will not survive a reboot. The systemd user unit `hermes-gateway-coder.service` exists but its `ExecStart` runs the **raw** gateway (no wrapper) and is currently `failed`/`disabled`. Bake the wrapper into it, reversibly.
+
+    <Warning>
+      **👤 Human-approval gate.** This is a mutation and the cutover briefly drops the messaging gateway. Get explicit go-ahead and agree a restart window before proceeding.
+    </Warning>
+
+    Back up, then prepend the wrapper to `ExecStart` (keep other lines unchanged):
+
+    ```bash
+    cp -a ~/.config/systemd/user/hermes-gateway-coder.service{,.bak.presesame}
+    # New ExecStart (mirrors the proven live command byte-for-byte):
+    # ExecStart=/home/ubuntu/sesame/.venv/bin/sesame launch -- \
+    #   /home/ubuntu/.hermes/hermes-agent/venv/bin/python \
+    #   -m hermes_cli.main --profile coder gateway run
+    ```
+
+    Reload as the gateway's user (`ubuntu`, uid 1000) — never as root:
+
+    ```bash
+    export XDG_RUNTIME_DIR=/run/user/1000
+    systemctl --user daemon-reload
+    ```
+  </Step>
+
+  <Step title="Cut over to the unit">
+    <Warning>
+      **👤 Human-approval gate.** This stops the detached wrapped process and starts the unit — a few-seconds interruption to the messaging gateway.
+    </Warning>
+
+    ```bash
+    kill -TERM <live-wrapper-pid>            # its proxyd + gateway children exit with it
+    export XDG_RUNTIME_DIR=/run/user/1000
+    systemctl --user enable --now hermes-gateway-coder.service
+    ```
+
+    Verify the durable wrap took effect:
+
+    ```bash
+    systemctl --user status hermes-gateway-coder.service   # active (running)
+    ss -ltnp | grep 14322                                  # fresh proxyd listening
+    ```
+  </Step>
+
+  <Step title="Prove an end-to-end model call">
+    Send a message to Hermes. The model call flows **gateway → local proxy → self-hosted broker → Anthropic**.
+
+    <Note>
+      **👤 You, in the browser** — the first brokered call for a freshly-launched proxy identity may require an approval in your dashboard. Surface any pending approval and wait; don't assume it clears. Once approved, the broker injects your real key and the reply arrives. Then set an **auto-approve policy on `api.anthropic.com`** so chat isn't gated every turn, and keep **per-call approval on side-effecting hosts**.
+    </Note>
+  </Step>
+</Steps>
+
+## Validation status
+
+This runbook was validated **read-only** on the live box. Here's exactly what was proven versus what is pending a human action.
+
+| What | Status |
+| --- | --- |
+| Box reachable; host is `ip-172-31-22-70` (not the old off-box `ip-172-31-25-14`) | ✅ Proven |
+| LLM calls are **in-process** on the box | ✅ Proven |
+| Tool/terminal exec is **local** (not off-box) | ✅ Proven |
+| Transparent wrap is **already applied**: gateway runs under `sesame launch`, proxy + CA env injected, all egress via `127.0.0.1:14322` | ✅ Proven |
+| Device identity valid (`sesame status`: fingerprint present, 1 active agent, tokens present) | ✅ Proven — **no login/claim gate** |
+| Self-hosted broker healthy (`localhost:8000/health` → 200) | ✅ Proven |
+| End-to-end Anthropic call succeeds | ⛔ **Blocked** — broker has no `api.anthropic.com` secret |
+| Durable systemd unit carries the wrapper | ⛔ **Pending** — unit still raw + failed + disabled; needs the approved edit + cutover |
+
+<Warning>
+  **The blocking gate, precisely.** The broker's allowlist currently contains only `api.stripe.com` and `generativelanguage.googleapis.com`. A brokered Anthropic probe was cleanly **denied**:
+
+  > `Error: Secret not found for hostname 'api.anthropic.com'. Create it in the Sesame dashboard at /credentials/secrets.` *(Request ID `9804ce51-…`)*
+
+  This is a **broker policy gate, not a code problem** — the transparent plumbing is correct and proven; the broker simply has no Anthropic credential to inject yet. Add it ([step 3](#runbook-transparent-egress)) to finish proving the path end-to-end.
+</Warning>
+
+## What this covers — and what it does not
+
+**Covered:** the Hermes **gateway's** in-process model calls (and, via `terminal.env_passthrough`, HTTP calls made by its locally-spawned tools) egress through Sesame once the Anthropic secret is added.
+
+**Not covered:**
+
+- **The Hermes dashboard.** A separate `hermes-dashboard.service` (bound to the Tailscale IP) runs **unwrapped** and holds a raw `ANTHROPIC_API_KEY`/`ANTHROPIC_TOKEN` in its environment. If the dashboard itself makes model calls, **those bypass Sesame**. Wrapping it is out of scope here — flag this to the user before claiming 100% coverage.
+- **Reboot durability, until [step 4](#runbook-transparent-egress) lands.** Today the wrap is a manual detached process; on reboot or manual restart Hermes comes back **unwrapped** (or fails, as the raw unit currently does). The systemd edit is what makes it durable.
+
+## Undo
+
+Every mutation in this runbook is reversible.
+
+```bash
+# Roll back the durable wrap:
+export XDG_RUNTIME_DIR=/run/user/1000
+systemctl --user disable --now hermes-gateway-coder.service
+cp -a ~/.config/systemd/user/hermes-gateway-coder.service.bak.presesame \
+      ~/.config/systemd/user/hermes-gateway-coder.service
+systemctl --user daemon-reload
+```
+
+To reproduce the prior live state instead (manual wrapped process), re-run the [step 1](#runbook-transparent-egress) `sesame launch` command detached (e.g. `setsid`/`nohup`).
+
+<Note>
+  **Do not** run `sesame login`/`switch`/`logout` as part of this — the existing device identity is bound to the **local** broker, and re-pointing it (e.g. at the cloud broker) would break the wrap. Config is untouched by the runbook (only the systemd unit is edited); the profile also carries `config.yaml.bak.*` backups if a config change is ever needed.
+</Note>
+
+<Warning>
+  **Security note.** During read-only inspection the `sesame` proxy token was visible in `/proc/<pid>/environ`. Treat it as exposed and **rotate it**. Never print token/secret values when following this guide — refer to them by name only.
+</Warning>
