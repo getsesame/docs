@@ -9,8 +9,21 @@ Hermes makes its LLM and tool calls **in-process** on the box where its gateway 
 This page is written from a **live, read-only validation** of a real Hermes deployment — a self-hosted Hermes Agent (v0.17.0) on EC2, running its own Sesame broker in Docker rather than the cloud broker. It documents the transparent-egress path, the human gates it involves, and the one credential your broker needs before an end-to-end model call succeeds.
 
 <Note>
-  **This deployment uses a self-hosted broker**, not the cloud broker at [getsesame.dev](https://getsesame.dev). The gateway's proxy points at a local broker (`sesame-proxyd --broker-url http://localhost:8000`), and the box already carries a valid device identity from an earlier setup. If you're following the standard cloud-broker flow instead, the concepts are identical — see the [OpenClaw guide](/agents/openclaw) — but the install/login steps differ (`sesame login --broker-url <your-url>`; see [Self-Host](/skills/self-host)).
+  **This deployment uses a self-hosted broker**, not the cloud broker at [getsesame.dev](https://getsesame.dev). If you're following the standard cloud-broker flow instead, the concepts are identical — see the [OpenClaw guide](/agents/openclaw) — but the install/login steps differ (`sesame login --broker-url <your-url>`; see [Self-Host](/skills/self-host)).
 </Note>
+
+<Warning>
+  **The self-hosted broker URL is deployment-specific — never assume it.** The broker's API URL and its dashboard URL vary per install (a loopback port like `http://localhost:8000`, a private Tailscale/VPN address, an internal DNS name). Discover the one this box actually uses before running anything that needs it:
+
+  ```bash
+  # the URL the running proxy is already bound to (authoritative):
+  ps -eo args | grep -o -- '--broker-url [^ ]*' | head -1
+  # or the CLI's stored config:
+  sesame status
+  ```
+
+  **If you cannot determine the broker URL (and its dashboard URL) from the box, ask the user — do not guess `localhost` or a hardcoded IP.** Getting it wrong points the device at the wrong broker and breaks the wrap. The dashboard (for adding secrets in step 3) is typically the same host as the broker; if it isn't discoverable, ask.
+</Warning>
 
 <Warning>
   **Human-in-the-loop.** Several steps hand off to a person: **adding the model-host secret** in your dashboard (step 3), **approving the durability cutover** (steps 4–5 briefly restart the gateway), and **approving the first brokered call** (step 6). If you're an agent running this guide, stop at each 👤 hand-off and ask the user to complete the dashboard/approval action — don't assume it succeeded.
@@ -35,7 +48,7 @@ If instead your config shows an off-box exec sandbox, the env-based wrap won't r
 
 - **Shell/SSH access to the Hermes host** (the commands below run in a terminal on that box, not in the Hermes dashboard/chat).
 - A running Hermes gateway you can restart (`hermes ... gateway run`), and its profile (here: `coder`).
-- The Sesame CLI on the box, and a broker it points at. On this deployment: `sesame` v0.3.48 in a venv (not on `PATH`) and a self-hosted broker in Docker (`sesame-broker` at `localhost:8000`).
+- The Sesame CLI on the box, and the broker it points at (see the callout above on finding the broker URL). On the validated deployment this was `sesame` in a venv (not on `PATH`) and a self-hosted broker in Docker.
 - A valid Sesame device identity for the user the gateway runs as (`ubuntu`). Here it already exists — `sesame status` shows a device fingerprint, one active agent, and tokens present.
 
 <Note>
@@ -78,7 +91,7 @@ If instead your config shows an off-box exec sandbox, the env-based wrap won't r
 
   <Step title="Add the model host's secret in the broker">
     <Note>
-      **👤 You, in the browser** — this is the blocking gate. In your **self-hosted** dashboard (`/credentials/secrets`), add a hostname + secret for **`api.anthropic.com`** with an **Anthropic** preset. Until this exists, brokered calls to that host are **denied** by the broker (proven live). The cloud-broker equivalent is **Secrets → Add**.
+      **👤 You, in the browser** — this is the blocking gate. Open your broker's dashboard at the URL you discovered above (its `/credentials/secrets` page) — **if you don't know it, ask the user, don't guess** — and add a hostname + secret for the model host **`api.anthropic.com`** with an **Anthropic** preset. Until this exists, brokered calls to that host are **denied** by the broker (proven live). The cloud-broker equivalent is [getsesame.dev](https://getsesame.dev) → **Secrets → Add**.
     </Note>
 
     Confirm the broker now allows the host:
