@@ -53,7 +53,8 @@
                   "agents/openclaw",
                   "agents/openclaw/hostinger"
                 ]
-              }
+              },
+              "agents/hermes"
             ]
           },
           {

@@ -1,0 +1,112 @@
+---
+title: "Connect Hermes to Sesame: Transparent Egress on a Self-Hosted Box"
+sidebarTitle: "Hermes"
+description: "Wrap the Hermes gateway with `sesame launch` so its in-process LLM calls egress through your broker. Validated live on a self-hosted deployment."
+---
+
+Hermes makes its LLM and tool calls **in-process** on the box where its gateway runs, so it fits the [transparent egress](/agents/overview) path: wrap the gateway with `sesame launch` and its model traffic is intercepted at the wire and injected server-side by your broker. Read the [OpenClaw guide](/agents/openclaw) first for the concepts (secrets, injection, approvals) — this page covers what Hermes changes, validated read-only on a live self-hosted Hermes deployment.
+
+<Warning>
+  **Two deployment-specific values — never assume them:**
+
+  - **Broker URL.** Self-host brokers vary (loopback port, Tailscale/VPN address, VPC endpoint). Find it from the running proxy — `ps -eo args | grep -o -- '--broker-url [^ ]*'` — or `sesame status`. If you can't, **ask the user**; the wrong URL points the device at the wrong broker.
+  - **Model host.** Whatever provider Hermes targets — `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`, … Read it from `config.yaml` (`model.base_url`). Below it's written `<model-host>`; substitute yours.
+</Warning>
+
+<Warning>
+  **Human-in-the-loop.** People act at: **adding the model-host secret** (step 3), **approving the durability cutover** (steps 4–5 briefly restart the gateway), and **approving the first call** (step 6). If you're an agent, stop at each 👤 and hand off — don't assume it succeeded.
+</Warning>
+
+## Does transparent egress apply?
+
+`sesame launch` only intercepts calls made **in-process** on the box it wraps. Confirm both are local before relying on this page:
+
+- **Model calls in-process** — `config.yaml` sets `model.provider` / `base_url`, and the gateway's own env holds **no** provider key (so it depends on the proxied path).
+- **Tools run locally** — `terminal.backend: local`, `modal_mode: off`. If your Hermes uses an off-box exec sandbox, tool calls made there won't be wrapped — you'd need [transparent mode + iptables](https://github.com/getsesame/sesame) on that host instead.
+
+## Prerequisites
+
+- **SSH access to the Hermes host** (commands run on that box, not the Hermes UI).
+- The Sesame CLI on the box + a broker it points at, and a valid device identity for the user the gateway runs as (`sesame status` shows a fingerprint + tokens).
+
+<Note>
+  Neither `hermes` nor `sesame` is usually on the default `PATH` (both live in venvs). **Use absolute paths** everywhere, including in the systemd unit.
+</Note>
+
+## Runbook
+
+<Steps>
+  <Step title="Wrap the gateway (or confirm it's wrapped)">
+    ```bash
+    ps -o pid,ppid,cmd $(pgrep -f 'hermes_cli.main.*gateway run')
+    ```
+    A `sesame launch -- … gateway run` parent plus a `sesame-proxyd` on `127.0.0.1:14322` means it's wrapped. If not, start it wrapped (absolute paths):
+    ```bash
+    /path/to/sesame launch -- /path/to/python -m hermes_cli.main --profile <profile> gateway run
+    ```
+  </Step>
+
+  <Step title="Verify the injection">
+    Proxy + CA env on the gateway, and egress **only** to the proxy:
+    ```bash
+    sudo tr '\0' '\n' < /proc/<pid>/environ | grep -E 'HTTPS_PROXY|CA_BUNDLE'
+    ss -tnp | grep <pid>          # sockets only to 127.0.0.1:14322
+    ```
+  </Step>
+
+  <Step title="Add the model host's secret">
+    <Note>
+      **👤 In the dashboard** (`/credentials/secrets` on your broker — ask the user for the URL if unknown), add a secret for **`<model-host>`** with its provider preset. Until it exists, brokered calls to that host are **denied**.
+    </Note>
+    ```bash
+    sesame hostnames          # <model-host> should now appear
+    ```
+  </Step>
+
+  <Step title="Make it durable (systemd user unit)">
+    A manually-started wrap won't survive a reboot. Bake the wrapper into the gateway's user unit, reversibly.
+    <Warning>**👤 Approval gate** — the cutover briefly drops the gateway; agree a window first.</Warning>
+    ```bash
+    U=~/.config/systemd/user/hermes-gateway-<profile>.service
+    cp -a "$U" "$U.bak.presesame"
+    # Prepend to ExecStart:  /path/to/sesame launch --   (keep the rest byte-for-byte)
+    export XDG_RUNTIME_DIR=/run/user/$(id -u)
+    systemctl --user daemon-reload
+    ```
+  </Step>
+
+  <Step title="Cut over + verify">
+    <Warning>**👤 Approval gate** — a few-seconds interruption.</Warning>
+    ```bash
+    kill -TERM <live-wrapper-pid>        # its proxyd + gateway children exit with it
+    systemctl --user enable --now hermes-gateway-<profile>.service
+    systemctl --user status hermes-gateway-<profile>.service   # active (running)
+    ss -ltnp | grep 14322                                      # fresh proxyd listening
+    ```
+  </Step>
+
+  <Step title="Prove an end-to-end call">
+    Message Hermes. Flow: **gateway → local proxy → broker → provider.**
+    <Note>
+      **👤** The first brokered call may need a dashboard approval — surface it and wait, don't assume it clears. Then set an **auto-approve policy on `<model-host>`** so chat isn't gated every turn (keep per-call approval on side-effecting hosts).
+    </Note>
+  </Step>
+</Steps>
+
+## Scope & caveats
+
+- **Covered:** the gateway's in-process model calls — plus tool-subprocess HTTP if you forward the proxy/CA env into them (Hermes `terminal.env_passthrough`).
+- **Not covered — the Hermes dashboard.** If a separate `hermes-dashboard.service` runs **unwrapped** with a raw provider key in its env and makes model calls, **those bypass Sesame.** Wrap it too, or note the gap before claiming full coverage.
+- **Durability:** until the systemd unit carries the wrapper, a reboot brings Hermes back unwrapped.
+
+## Undo
+
+```bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+systemctl --user disable --now hermes-gateway-<profile>.service
+cp -a "$U.bak.presesame" "$U" && systemctl --user daemon-reload
+```
+
+<Note>
+  Don't run `sesame login` / `switch` / `logout` here — the device identity is bound to your broker, and re-pointing it breaks the wrap. The proxy token lives in the wrapped process's env; rotate it if it may have been exposed.
+</Note>
