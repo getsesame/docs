@@ -1,7 +1,7 @@
 ---
 title: "Connect OpenClaw to Sesame: A Keyless AI Agent"
 sidebarTitle: "Any host"
-description: "Run your OpenClaw gateway through Sesame so its LLM and tool calls are injected server-side. OpenClaw holds only dummy placeholders — no real API keys on your box."
+description: "Run your OpenClaw gateway through Sesame so LLM and tool calls are injected server-side. OpenClaw holds only dummy placeholders — no real API keys."
 ---
 
 OpenClaw makes its LLM and tool calls in-process, so it works cleanly with [transparent egress](/agents/overview). Wrap the gateway with `sesame launch` and every brokered call — its model provider, Stripe, anything you've configured — is injected by the broker after your approval. OpenClaw itself stores only placeholders.
