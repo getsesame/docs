@@ -53,6 +53,16 @@ Before starting the onboarding flow, confirm you have the following ready:
     ```
 
     Replace `<your-vpc-endpoint>` with the URL output by the onboarding skill.
+
+    <Warning>
+      **Your broker URL is deployment-specific — never assume it.** It's whatever your deploy produced: a VPC endpoint, a private Tailscale/VPN address, an internal DNS name, or a loopback port on the box. Determine it from a source of truth, in order: the endpoint your `sesame-onboard` deploy printed; `sesame status` (the CLI's stored broker URL); or the `--broker-url` the running edge proxy is bound to:
+
+      ```bash
+      ps -eo args | grep -o -- '--broker-url [^ ]*' | head -1
+      ```
+
+      **If you're an agent following these steps and can't determine the broker URL from the environment, ask the user — never guess `localhost` or a hardcoded address.** The wrong URL points the device at the wrong broker and breaks the integration. Your dashboard (for adding secrets) lives at the same host, under `/credentials/secrets`.
+    </Warning>
   </Step>
 
   <Step title="Verify agent traffic routes through your infrastructure">
