@@ -117,7 +117,7 @@ Shall I proceed?
     <Warning>
       If the host you want isn't in your `sesame hostnames` list, configure its secret first, then come back to this step.
 
-      Start with the CLI: `sesame secret create <name> --hostname <host>` returns a dashboard link where you paste the value (the CLI never accepts secret material). If that doesn't work, add the secret directly in the dashboard under [**Credentials → Secrets**](https://getsesame.dev/credentials/secrets) (the same path on your own broker's URL if you self-host).
+      Start with the CLI: `sesame secret create <name> --hostname <host>` returns a dashboard link where you paste the value (the CLI never accepts secret material). If that doesn't work, add the secret directly in the dashboard under [**Credentials → Secrets**](https://getsesame.dev/credentials/secrets) (the same path on your own broker's URL if you self-host — that URL is deployment-specific, so discover it or ask the user; see [Self-Host](/skills/self-host)).
     </Warning>
 
     The example below calls the Anthropic Messages API. **It's only an example** — substitute whichever host is in *your* list and the request/headers that API expects:

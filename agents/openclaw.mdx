@@ -7,7 +7,7 @@ description: "Run your OpenClaw gateway through Sesame so LLM and tool calls are
 OpenClaw makes its LLM and tool calls in-process, so it works cleanly with [transparent egress](/agents/overview). Wrap the gateway with `sesame launch` and every brokered call — its model provider, Stripe, anything you've configured — is injected by the broker after your approval. OpenClaw itself stores only placeholders.
 
 <Note>
-  This guide uses the **cloud broker** at [getsesame.dev](https://getsesame.dev), so you never run your own broker or hold your own keys. Running your own broker? See [Self-Host](/skills/self-host) — the only difference is `sesame login --broker-url <your-url>`.
+  This guide uses the **cloud broker** at [getsesame.dev](https://getsesame.dev), so you never run your own broker or hold your own keys. Running your own broker? See [Self-Host](/skills/self-host) — the only difference is `sesame login --broker-url <your-url>`. That URL is deployment-specific; discover it from your deploy output or `sesame status`, and **if an agent can't determine it, ask the user rather than assuming** `localhost` or a hardcoded address.
 </Note>
 
 <Warning>
