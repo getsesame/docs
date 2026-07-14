@@ -1,0 +1,228 @@
+---
+title: "Onboard an Existing Agent to Run Keyless Behind Sesame"
+sidebarTitle: "Transparent Egress"
+description: "Wrap an existing agent under sesame launch, broker its egress hosts, verify it's protected, and strip the local credential so keys live only in Sesame."
+---
+
+`sesame launch` runs an agent transparently behind Sesame: it routes the agent's outbound HTTPS through a local edge proxy (`sesame-proxyd`) to your broker, which injects the real credential per request — with approval and audit — so the agent never holds the key. Unlike `sesame request` (cooperative: the agent has to call Sesame explicitly), transparent egress needs **no change to the agent's code** — you wrap the process and broker the hostnames it already calls.
+
+This page walks the end-to-end flow for onboarding an existing agent — Hermes, OpenClaw, Claude Code, or anything that talks HTTPS to a provider — so it runs keyless.
+
+<Note>
+  Before you change anything, run `sesame onboard detect` (read-only). It fingerprints how the agent is deployed — container entrypoint, systemd unit, or a foreground command — and reports an **egress** section: which providers are configured, which hosts they'll call, whether each host is already brokered, and whether the agent still holds a real credential for it (its keyless status). Add `--json` for machine-readable output, or `--target user@host` to inspect a remote box over SSH.
+
+  ```bash
+  sesame onboard detect
+  sesame onboard detect --target ubuntu@98.89.217.121 --json
+  ```
+</Note>
+
+---
+
+## Step A — Wrap the agent under `sesame launch`
+
+`sesame launch` becomes the agent's parent process and points its egress at the local proxy. How you install the wrapper depends on how the agent is deployed.
+
+<Tabs>
+  <Tab title="Container entrypoint">
+    Rewrite the container's entrypoint script in place so the containerized process starts under `sesame launch`:
+
+    ```bash
+    sesame launch --install-wrapper /entrypoint.sh
+    ```
+
+    Revert it just as easily:
+
+    ```bash
+    sesame launch --revert-wrapper /entrypoint.sh
+    ```
+  </Tab>
+
+  <Tab title="systemd unit">
+    On a bare VPS or EC2 box (for example, the Hermes gateway), wrap a systemd unit. For a **system** unit:
+
+    ```bash
+    sesame launch --install-wrapper hermes-gateway.service --unit
+    ```
+
+    For a **user** unit, add `--user`:
+
+    ```bash
+    sesame launch --install-wrapper hermes-gateway.service --unit --user
+    ```
+
+    This writes a systemd drop-in override that reruns the unit's `ExecStart` under `sesame launch`:
+
+    - **System unit:** `/etc/systemd/system/<unit>.d/sesame-wrap.conf`
+    - **User unit:** `~/.config/systemd/user/<unit>.d/sesame-wrap.conf`
+
+    The command runs `systemctl daemon-reload` for you and prints the exact `systemctl restart` line to apply the change. Revert with:
+
+    ```bash
+    sesame launch --revert-wrapper hermes-gateway.service --unit
+    # add --user for a user unit
+    ```
+  </Tab>
+
+  <Tab title="Foreground / dev">
+    For a foreground or development run, prefix the command with `sesame launch --`:
+
+    ```bash
+    sesame launch -- python -m hermes.gateway
+    ```
+
+    Everything after `--` is the agent command; it runs wrapped for the life of that process, with nothing installed on disk.
+  </Tab>
+</Tabs>
+
+---
+
+## Step B — Broker each host the agent calls
+
+Wrapping routes the agent's egress through Sesame, but the broker only injects a credential for hosts you've configured a secret for. The critical teaching point:
+
+<Warning>
+  **A provider's egress host is not its brand name.** You broker the real hostname the agent's HTTP client connects to — not the company's name and not always its public API domain.
+
+  The clearest trap is OpenAI's **Codex** provider: it rides a **ChatGPT subscription** and calls `chatgpt.com/backend-api/codex`, **not** `api.openai.com`. So to onboard a Codex agent you broker `chatgpt.com` — brokering `api.openai.com` would do nothing, because the agent never connects there.
+</Warning>
+
+Use this mapping to pick the host to broker and the injection mode for each provider:
+
+| Agent provider | Egress host (broker THIS) | Auth kind |
+|---|---|---|
+| OpenAI API (`openai-api`) | `api.openai.com` | API key |
+| OpenAI Codex (`openai-codex`) | `chatgpt.com` | ChatGPT OAuth |
+| Anthropic API | `api.anthropic.com` | API key |
+| Anthropic (Claude subscription) | `api.anthropic.com` | OAuth |
+| Google Gemini | `generativelanguage.googleapis.com` | API key |
+| xAI Grok (OAuth) | `api.x.ai` | OAuth |
+| OpenRouter | `openrouter.ai` | API key |
+
+Add the secret in the [getsesame.dev dashboard](https://getsesame.dev) or start it from the CLI, matching the injection mode to the provider — **Bearer** (`Authorization: Bearer …`) for OpenAI/OpenRouter/OAuth providers, or the provider's **API-key header** (for example `x-api-key` for Anthropic):
+
+```bash
+# CLI returns a dashboard link where you paste the value — the CLI never accepts secret material
+sesame secret create openai-prod --hostname api.openai.com --mode bearer
+sesame secret create anthropic-prod --hostname api.anthropic.com --mode api-key --header x-api-key
+```
+
+<Note>
+  For OAuth-subscription providers (Codex on ChatGPT, Claude subscription) a static token expires and rotates, so a plain secret won't last. Use an **OAuth2 secret** instead so the broker mints fresh tokens itself — see [Brokering OAuth-subscription providers](#brokering-oauth-subscription-providers) below.
+</Note>
+
+---
+
+## Step C — Refresh the edge proxy
+
+After you add a secret, the local `sesame-proxyd` keeps passing that host straight through until its host cache expires (~60s), so a just-added secret isn't brokered instantly. Bump it immediately:
+
+```bash
+sesame proxyd reload
+```
+
+This sends `SIGHUP` to the running proxy so it re-reads the brokered-host set and starts splicing the new host right away — no restart, no dropped connections.
+
+---
+
+## Step D — Verify it's actually protected
+
+`sesame onboard verify` is a **gate**, not just a report. It checks the whole chain — the wrap is in place, `sesame-proxyd` is running, device identity and token are valid, and the broker answers for the agent's hosts — and encodes the result in its exit code:
+
+```bash
+sesame onboard verify
+sesame onboard verify --target ubuntu@98.89.217.121   # check a remote box over SSH
+sesame onboard verify --json                          # machine-readable
+```
+
+| Exit code | Meaning |
+|---|---|
+| `0` | **PROTECTED** — wrap + proxyd + identity + token + broker all pass |
+| `1` | Ran, but the agent is **not** protected (a check failed) |
+| `2` | Couldn't run the check at all |
+
+Use the exit code in scripts and CI — treat a non-zero as "do not proceed to the next step."
+
+---
+
+## Step E — Go keyless (neutralize the local credential)
+
+The last step removes the agent's real credential from the box so the key lives **only** in Sesame. You can't simply delete it: many agents precheck for a local credential before they hit the network and refuse to start without one.
+
+`sesame onboard neutralize` handles this by **swapping the real credential for a structurally-valid dummy** — a marked token with a far-future expiry — so the agent's precheck passes and it still makes the call, but the byte string on disk is worthless. The real credential is injected at the broker per request.
+
+```bash
+sesame onboard neutralize
+```
+
+<Warning>
+  Neutralize refuses to run unless `sesame onboard verify` reports **PROTECTED** — it will never strip a credential off an agent whose egress isn't brokered (that would just break it). Override only if you know what you're doing:
+
+  ```bash
+  sesame onboard neutralize --force
+  ```
+</Warning>
+
+It's fully reversible — the real credential is journaled to a backup before the swap:
+
+```bash
+sesame onboard neutralize --provider openai-codex --config ~/.hermes/auth.json
+sesame onboard neutralize --undo   # restore the real credential from the backup
+```
+
+| Flag | Purpose |
+|---|---|
+| `--provider <id>` | Which provider's credential to neutralize (for example `openai-codex`) |
+| `--config <path>` | Path to the agent's credential file (default `~/.hermes/auth.json`) |
+| `--force` | Neutralize even if `verify` isn't PROTECTED |
+| `--undo` | Restore the real credential from the journaled backup |
+
+After neutralize, run `sesame onboard detect` again — the egress section should show the host brokered and the agent holding **no** real credential for it. That's the keyless end state.
+
+---
+
+## Brokering OAuth-subscription providers
+
+For providers whose auth is an OAuth **subscription** — ChatGPT Codex, the Claude subscription — the access token is short-lived and rotates, so a static secret goes stale within the hour. Create an **OAuth2 secret** so the broker holds the refresh token and mints fresh access tokens itself, per call:
+
+```bash
+sesame secret create codex-sub --hostname chatgpt.com --mode bearer \
+  --oauth-token-url https://auth.openai.com/oauth/token \
+  --oauth-client-id <client-id> --oauth-grant refresh_token
+```
+
+This prints a dashboard link. You paste **only the refresh token** into the dashboard form — as always, the CLI never accepts the secret value directly. From then on the broker exchanges that refresh token for a short-lived access token on each request and injects it as `Authorization: Bearer …`, so the brokered host keeps working across token rotations with nothing to re-enter.
+
+<Note>
+  This is what makes Codex and Claude-subscription agents durable behind Sesame: the subscription's rotating token is managed entirely broker-side, and the agent — now keyless — never sees any of it.
+</Note>
+
+---
+
+## Full onboarding run
+
+Putting it together for a Codex agent on an EC2 systemd box:
+
+```bash
+# 0. See what you're dealing with (read-only)
+sesame onboard detect
+
+# 1. Wrap the unit
+sesame launch --install-wrapper hermes-gateway.service --unit
+sudo systemctl restart hermes-gateway.service   # command printed by step 1
+
+# 2. Broker the real egress host (Codex → chatgpt.com, OAuth subscription)
+sesame secret create codex-sub --hostname chatgpt.com --mode bearer \
+  --oauth-token-url https://auth.openai.com/oauth/token \
+  --oauth-client-id <client-id> --oauth-grant refresh_token
+# → paste ONLY the refresh token in the dashboard link it prints
+
+# 3. Refresh the edge proxy so chatgpt.com is brokered now
+sesame proxyd reload
+
+# 4. Gate on protection
+sesame onboard verify && echo PROTECTED
+
+# 5. Go keyless
+sesame onboard neutralize --provider openai-codex
+```

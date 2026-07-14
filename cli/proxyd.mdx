@@ -1,0 +1,25 @@
+---
+title: "sesame proxyd — Manage the Local Edge Proxy"
+sidebarTitle: "Proxyd"
+description: "sesame proxyd reload sends SIGHUP to sesame-proxyd so a just-added secret's host is brokered immediately, without waiting for the ~60s host cache to expire."
+---
+
+`sesame-proxyd` is the local edge proxy that `sesame launch` routes an agent's egress through. It caches the set of brokered hosts for about 60 seconds, so a secret you just added isn't spliced instantly — until the cache expires, the proxy passes that host straight through.
+
+## `sesame proxyd reload`
+
+Bump the proxy immediately after adding a secret:
+
+```bash
+sesame proxyd reload
+```
+
+This sends `SIGHUP` to the running `sesame-proxyd` so it re-reads the brokered-host set and starts splicing the newly added host right away — no restart, no dropped connections.
+
+<Note>
+  You only need this when you've **just** added a secret and want the host brokered now. Left alone, the proxy picks up the new host on its own within ~60s.
+</Note>
+
+<Tip>
+  Reload fits between adding a secret and verifying: `sesame secret create …` → `sesame proxyd reload` → `sesame onboard verify`. See the full flow in [Transparent Egress](/agents/transparent-egress).
+</Tip>

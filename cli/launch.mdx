@@ -1,0 +1,81 @@
+---
+title: "sesame launch — Run an Agent Transparently Behind Sesame"
+sidebarTitle: "Launch"
+description: "sesame launch routes an agent's egress through the local edge proxy to the broker. Wrap a container entrypoint, systemd unit, or foreground command — no code changes."
+---
+
+`sesame launch` runs a process transparently behind Sesame. It routes the process's outbound HTTPS through the local edge proxy (`sesame-proxyd`) to your broker, which injects the real credential per request — so the agent never holds the key and needs **no code changes**. This is the transparent counterpart to `sesame request` (which the agent has to call explicitly).
+
+For the full onboarding flow — brokering hosts, verifying, and going keyless — see [Transparent Egress](/agents/transparent-egress).
+
+## Syntax
+
+```bash
+sesame launch -- <command> [args...]          # wrap a foreground command
+sesame launch --install-wrapper <target> [--unit [--user]]
+sesame launch --revert-wrapper  <target> [--unit [--user]]
+```
+
+## Wrap a foreground command
+
+Prefix any command with `sesame launch --`. Everything after `--` is the agent command; it runs wrapped for the life of that process, with nothing installed on disk.
+
+```bash
+sesame launch -- python -m hermes.gateway
+```
+
+## Install a persistent wrapper
+
+<ParamField path="--install-wrapper <target>" type="string">
+  Rewrite a deployment target so its process starts under `sesame launch` persistently.
+
+  **Container entrypoint** — pass a script path; it's rewritten in place:
+
+  ```bash
+  sesame launch --install-wrapper /entrypoint.sh
+  ```
+
+  **systemd unit** — pass a unit name with `--unit` (see below).
+</ParamField>
+
+<ParamField path="--unit" type="flag">
+  Treat the target as a **systemd unit** rather than a script. Writes a drop-in override that reruns the unit's `ExecStart` under `sesame launch`:
+
+  - **System unit:** `/etc/systemd/system/<unit>.d/sesame-wrap.conf`
+  - **User unit** (with `--user`): `~/.config/systemd/user/<unit>.d/sesame-wrap.conf`
+
+  The command runs `systemctl daemon-reload` for you and prints the exact `systemctl restart` line to apply the change.
+
+  ```bash
+  # system unit
+  sesame launch --install-wrapper hermes-gateway.service --unit
+
+  # user unit
+  sesame launch --install-wrapper hermes-gateway.service --unit --user
+  ```
+</ParamField>
+
+<ParamField path="--user" type="flag">
+  With `--unit`, target a **user** systemd unit (`systemctl --user`) instead of a system unit. Writes the override under `~/.config/systemd/user/…`.
+</ParamField>
+
+<ParamField path="--revert-wrapper <target>" type="string">
+  Undo `--install-wrapper`. For a container entrypoint it restores the original script; for a systemd unit (with `--unit`, plus `--user` for a user unit) it removes the drop-in override and reloads the daemon.
+
+  ```bash
+  sesame launch --revert-wrapper /entrypoint.sh
+  sesame launch --revert-wrapper hermes-gateway.service --unit --user
+  ```
+</ParamField>
+
+## Verify the wrap
+
+Installing the wrapper is only the first step of onboarding — confirm the agent is actually protected before you trust it:
+
+```bash
+sesame onboard verify && echo PROTECTED
+```
+
+<Tip>
+  Run `sesame onboard detect` first to see how the agent is deployed and which egress hosts it calls — that tells you whether to wrap a script, a system unit, or a user unit. See [`sesame onboard`](/cli/onboard).
+</Tip>

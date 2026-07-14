@@ -6,6 +6,10 @@ description: "Sesame has 70+ pre-built provider integrations. Add your API key i
 
 Sesame ships with pre-built integrations for 70\+ API providers — add your credential once in the dashboard and the broker automatically injects the right `Authorization` header whenever `sesame request` targets that provider's hostname. You never expose secrets to your agent; the broker handles injection transparently at request time.
 
+<Note>
+  **Transparent routing brokers the real egress hostname.** With cooperative `sesame request`, you match a secret to the URL the agent calls. With transparent [`sesame launch`](/agents/transparent-egress) routing, you broker the exact hostname the agent's HTTP client connects to — which is **not** always the provider's brand name or public API domain. The classic trap: OpenAI's **Codex** provider rides a ChatGPT subscription and calls `chatgpt.com/backend-api/codex`, so you broker `chatgpt.com`, **not** `api.openai.com`. See [Transparent Egress](/agents/transparent-egress) for the full provider → host mapping.
+</Note>
+
 ## How credential matching works
 
 Credentials in Sesame are keyed to a hostname. When your agent calls `sesame request`, the broker inspects the target URL, finds the matching credential, and injects the authentication header before forwarding the request. For example, when your agent runs:
