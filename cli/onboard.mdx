@@ -1,0 +1,79 @@
+---
+title: "sesame onboard — Detect, Verify, and Go Keyless"
+sidebarTitle: "Onboard"
+description: "sesame onboard detect fingerprints an agent's deployment and egress, verify gates on whether it's protected, and neutralize swaps the local credential for a dummy."
+---
+
+`sesame onboard` is the toolkit for taking an existing agent keyless behind Sesame. Its three subcommands map to the last stages of the [Transparent Egress](/agents/transparent-egress) flow: understand the agent (`detect`), gate on protection (`verify`), then strip the local credential (`neutralize`).
+
+## `sesame onboard detect`
+
+Read-only. Fingerprints how the agent is deployed — container entrypoint, systemd unit (system or user), or a foreground command — and reports an **egress** section: which providers are configured, which hosts they'll call, whether each host is already brokered, and whether the agent still holds a real credential for it (its keyless status).
+
+```bash
+sesame onboard detect
+sesame onboard detect --json
+sesame onboard detect --target ubuntu@98.89.217.121
+```
+
+<ParamField path="--json" type="flag">
+  Emit machine-readable JSON instead of the human summary.
+</ParamField>
+
+<ParamField path="--target user@host" type="string">
+  Inspect a remote box over SSH instead of the local machine.
+</ParamField>
+
+## `sesame onboard verify`
+
+A **gate**, not just a report. Checks the whole chain — the wrap is installed, `sesame-proxyd` is running, device identity and token are valid, and the broker answers for the agent's hosts — and encodes the result in its exit code.
+
+```bash
+sesame onboard verify
+sesame onboard verify --target ubuntu@98.89.217.121
+sesame onboard verify --json
+```
+
+| Exit code | Meaning |
+|---|---|
+| `0` | **PROTECTED** — wrap + proxyd + identity + token + broker all pass |
+| `1` | Ran, but the agent is **not** protected (a check failed) |
+| `2` | Couldn't run the check at all |
+
+<Tip>
+  Use the exit code in scripts and CI: `sesame onboard verify && <next step>`. A non-zero exit means "do not proceed."
+</Tip>
+
+## `sesame onboard neutralize`
+
+Takes the agent keyless by **swapping its real credential for a structurally-valid dummy** — a marked token with a far-future expiry. Many agents precheck for a local credential and refuse to start without one, so you can't just delete it; the dummy keeps that precheck happy while the real credential lives only in Sesame, injected at the broker per request.
+
+```bash
+sesame onboard neutralize
+sesame onboard neutralize --provider openai-codex --config ~/.hermes/auth.json
+sesame onboard neutralize --undo
+```
+
+<Warning>
+  Neutralize refuses to run unless `sesame onboard verify` reports **PROTECTED** — it will never strip a credential off an un-brokered agent. Override with `--force` only if you know what you're doing.
+</Warning>
+
+<ParamField path="--provider <id>" type="string">
+  Which provider's credential to neutralize (for example `openai-codex`).
+</ParamField>
+
+<ParamField path="--config <path>" type="string">
+  Path to the agent's credential file. Default: `~/.hermes/auth.json`.
+</ParamField>
+
+<ParamField path="--force" type="flag">
+  Neutralize even if `verify` isn't PROTECTED. Use with care — this can strip a credential off an agent whose egress isn't brokered.
+</ParamField>
+
+<ParamField path="--undo" type="flag">
+  Restore the real credential from the journaled backup written before the swap. Neutralize is fully reversible.
+</ParamField>
+
+<Note>
+  After neutralize, run `sesame onboard detect` again — the egress section should show the host brokered and the agent holding **no** real credential for it. That's the keyless end state.
+</Note>

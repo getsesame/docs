@@ -27,12 +27,21 @@
             ]
           },
           {
+            "group": "Onboarding Agents",
+            "pages": [
+              "agents/transparent-egress"
+            ]
+          },
+          {
             "group": "CLI Reference",
             "pages": [
               "cli/login",
               "cli/request",
               "cli/status",
-              "cli/hostnames"
+              "cli/hostnames",
+              "cli/launch",
+              "cli/onboard",
+              "cli/proxyd"
             ]
           },
           {
