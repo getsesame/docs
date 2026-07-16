@@ -1,0 +1,73 @@
+---
+title: "Connect Hermes to Sesame"
+sidebarTitle: "Hermes"
+description: "Run new or existing Hermes processes through Sesame."
+---
+
+Run these commands on the machine where Hermes runs.
+
+## Before you start
+
+```bash
+sesame login
+sesame proxyd install
+```
+
+Add your provider secrets in the Sesame dashboard before starting Hermes.
+
+## New Hermes installation
+
+Install Hermes, then launch it through Sesame:
+
+```bash
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+source ~/.zshrc  # or: source ~/.bashrc
+sesame launch -- hermes
+```
+
+For a gateway:
+
+```bash
+sesame launch -- hermes gateway run
+```
+
+## Existing Hermes installation
+
+Start Hermes normally, then let Sesame detect its Desktop, gateway, service, or terminal process:
+
+```bash
+sesame onboard hermes --dry-run
+sesame onboard hermes
+```
+
+Sesame shows what it found before restarting supported processes. Confirm the prompt to continue.
+
+## Later sessions
+
+New processes must also start through Sesame:
+
+```bash
+sesame launch -- hermes
+```
+
+If Hermes Desktop was reopened from the Dock, or Hermes is already running:
+
+```bash
+sesame onboard hermes
+```
+
+Bare interactive terminal sessions cannot be moved to another terminal automatically. Exit the session, then rerun it with `sesame launch --`.
+
+## Verify
+
+```bash
+sesame onboard hermes --verify-only
+```
+
+## Remove Sesame egress
+
+```bash
+sesame egress uninstall
+```
+
+This preserves your Sesame login, agent registration, secrets, and policies.
