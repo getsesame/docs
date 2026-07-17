@@ -57,10 +57,16 @@ As root, in the container shell:
 
 ```bash
 curl -fsSL https://getsesame.dev/install.sh | sh
+mkdir -p /data/.config /data/.local && chown -R node:node /data/.config /data/.local
 mkdir -p /run/user/1000 && chown node:node /run/user/1000 && chmod 700 /run/user/1000
 ```
 
-The second line creates the per-user runtime directory the CLI expects: containers have no systemd/logind to make it, and the `node` user can't create it itself (`/run` is root-owned) — without it, `sesame login` crashes with `PermissionError: '/run/user/1000'`. That's the only fix a fresh template container needs. (Any *other* `PermissionError` on an older or modified container: see [Troubleshooting](#troubleshooting) row 1.)
+Requires **sesame ≥ v0.3.71** (`sesame --version`) — earlier builds leak `LD_LIBRARY_PATH` into the wrapped agent and break any child that links system libraries (e.g. `curl: … libssl.so.3: version 'OPENSSL_3.2.0' not found`). `install.sh` pulls the latest, so a fresh install is fine.
+
+Two setup lines, both needed on a **fresh** template:
+
+* The `.config`/`.local` chown fixes a fresh-template quirk — those dirs are created **root-owned** on the `/data` mount, so `sesame login` (run as `node`) crashes with `PermissionError: '/data/.config/sesame'`. (Once fixed they stay fixed: `/data` survives recreates.)
+* The runtime-dir line creates `/run/user/1000` — containers have no systemd/logind to make it, and `node` can't (`/run` is root-owned) — without it `login` crashes with `PermissionError: '/run/user/1000'`.
 
 ## 5. Register as the app user
 
@@ -170,7 +176,7 @@ To prove the full path's env injection directly, check the gateway process's env
   tr '\0' '\n' < /proc/<host-pid>/environ | grep -E 'HTTPS_PROXY|NODE_EXTRA_CA_CERTS'
   ```
 
-  Both proxy and CA variables present → the gateway was born under `sesame launch`.
+  Both proxy and CA variables present → the gateway was born under `sesame launch`. On **sesame ≥ v0.3.71** `LD_LIBRARY_PATH` should be **absent** from that output — if it's set to a `…/lib/sesame` path, you're on a pre-fix build that leaks it into the agent (upgrade).
 </Warning>
 
 If you did the optional step 2, also confirm the panel's env fields hold only `sesame-managed-placeholder` values — the real keys exist only in Sesame's vault.
@@ -179,11 +185,12 @@ If you did the optional step 2, also confirm the panel's env fields hold only `s
 
 | Error | Cause → Fix |
 | --- | --- |
-| `PermissionError: [Errno 13] Permission denied: '/data/.config/sesame'` | Root-owned state dirs on the data mount (not present on a fresh template) → `mkdir -p /data/.config /data/.local && chown -R node:node /data/.config /data/.local`, then retry `login`. |
+| `PermissionError: [Errno 13] Permission denied: '/data/.config/sesame'` | `/data/.config` is created **root-owned** on a fresh template, so `sesame login` (run as `node`) can't write it. [Step 4](#4-install-the-sesame-cli) now chowns it up front — if you still hit this, run `mkdir -p /data/.config /data/.local && chown -R node:node /data/.config /data/.local`, then retry `login`. |
 | `FileNotFoundError: '/run/user/1000/sesame'` then `PermissionError: '/run/user/1000'` | The runtime dir from [step 4](#4-install-the-sesame-cli) is missing — `/run` is a tmpfs, so a container restart empties it. Re-run step 4's `mkdir`/`chown`/`chmod` line. (The full path's entrypoint edit re-creates it automatically on every boot, so this only bites quick-path users after a restart.) |
 | `EADDRINUSE: address already in use` when starting the gateway by hand | Never run `openclaw gateway run` or `sesame launch -- openclaw gateway run` manually — the template supervises the gateway and the port is already bound. Use the entrypoint sed + restart. |
 | Crash loop: `runuser: failed to execute /usr/local/bin/sesame: No such file or directory` | The entrypoint edit is present but the install isn't — in practice the **paste race**: the sed ran in the container while the install landed on the VPS host. (A panel recreate does *not* cause this — it also reverts the entrypoint, so a recreated container boots clean; see the last row.) Recover **without entering the crash-looping container**: install on the VPS host (`curl -fsSL https://getsesame.dev/install.sh \| sh`), then copy **both pieces** — `docker cp /usr/local/lib/sesame <container>:/usr/local/lib/` **and** `docker cp /usr/local/bin/sesame <container>:/usr/local/bin/` (that's the symlink into the lib directory; it resolves once the directory exists) — then `docker restart <container>`. Copying only one piece keeps the loop going: the symlink alone is a dangling 1.5 kB link ("Successfully copied 1.54kB" is the tell), and the lib directory alone leaves `/usr/local/bin/sesame` missing. |
 | `openclaw: command not found` | You're on the VPS host shell, not in the container — see [step 3](#3-enter-the-container-shell). |
 | Everything gone after a container recreate | `/data` survives (device identity and login included — no re-approval needed), but the CLI install and the entrypoint edit are gone. Redo step 4's install line and the sed, then restart. Secrets and policies live in your Sesame account and always survive. |
 | ChatGPT/OAuth sign-in ends at `This site can't be reached — localhost:1455` | Expected on a VPS: the OAuth flow redirects to a callback server inside the container, but your browser's "localhost" is your own machine. The sign-in itself succeeded — copy the **entire failed URL** from the browser's address bar and paste it back into the terminal prompt (it accepts the redirect URL or authorization code), then restart the app from the panel. |
+| Wrapped chat returns `{"detail":"Bad Request"}` (model call fails after a ~40s stall) | A **brokered host is replacing the agent's own working auth.** If OpenClaw routes its LLM through an OAuth host you've brokered — e.g. `chatgpt.com` via the codex path — the broker swaps the agent's valid token for your stored credential and the provider rejects it. (The broker logs `200` — that's its envelope; the real `400` rides *inside* from upstream, which is why it isn't a Sesame error.) Fix: broker **`api.openai.com`** (Bearer) and run a standard `provider: openai` model, **not** the codex/`chatgpt.com` path. Don't broker the OAuth host. |
 | Crash loop: `Could not obtain valid token. Try sesame refresh or sesame login.` | The broker no longer accepts this device (typically revoked/deleted in the dashboard) and the wrapper fails closed at boot. Recover: revert the entrypoint edit (swap the `sesame launch` line back to `exec runuser -u node -- "$@"` via `docker cp` from the host), restart, then `runuser -u node -- sesame login --new` → approve the new device → re-apply the sed → restart. |
