@@ -69,40 +69,14 @@ runuser -u node -- /data/.local/bin/sesame launch -- \
 
 Then send a chat in OpenClaw and approve the first call. The reply arrives with your real key injected server-side — OpenClaw never sees it.
 
----
+## Troubleshooting
 
-## Run this with an AI agent
+| Symptom | Fix |
+| --- | --- |
+| `sesame login` → `PermissionError: '/data/.config/sesame'` | `/data/.config` is root-owned on a fresh box. Re-run step 2's `chown -R node:node /data/.config /data/.local`, then retry. |
+| Chat returns `{"detail":"Bad Request"}` | A brokered OAuth host (e.g. `chatgpt.com` via codex) is overriding OpenClaw's own auth. Broker `api.openai.com` and use `provider: openai`, not the codex path. |
+| OpenClaw is unwrapped after a change | A container **recreate** (a panel env-var edit, an image pull) wipes the container's writable layer — but the `/data` install + compose `entrypoint` above bring it back up wrapped on their own. Re-confirm with step 5. |
 
-Paste this to an agent working in the container's App terminal. It runs the same steps and verifies them; it pauses at each 👤 for you.
-
-```
-Onboard this Hostinger OpenClaw onto Sesame (broker: getsesame.dev). Run in the container's App
-terminal as root. The gateway runs as user `node` (HOME=/data), so prefix Sesame commands with
-`runuser -u node --`. Install into /data and wrap via the compose file so it survives recreates.
-Stop and ask me at each 👤.
-
-1. Confirm a secret exists in getsesame.dev for the host OpenClaw calls (usually api.openai.com,
-   Bearer), with an auto-approve policy. 👤
-2. Install + fix dirs:
-     mkdir -p /data/.local/bin && curl -fsSL https://getsesame.dev/install.sh | sh -s -- --prefix /data/.local/bin
-     chown -R node:node /data/.local /data/.config
-     mkdir -p /run/user/1000 && chown node:node /run/user/1000 && chmod 700 /run/user/1000
-   Require sesame >= v0.3.71.
-3. runuser -u node -- /data/.local/bin/sesame proxyd install
-4. runuser -u node -- /data/.local/bin/sesame login  → give me the URL, wait for approval. 👤
-5. Pre-check (must print SESAME_OK, else stop and fix login):
-     runuser -u node -- /data/.local/bin/sesame launch -- echo SESAME_OK
-6. Write /data/sesame-boot.sh replicating the STOCK /entrypoint.sh setup, then
-   `exec runuser -u node -- /data/.local/bin/sesame launch -- "$@"`; chmod +x. In the host
-   docker-compose.yml add under the service: entrypoint: ["/data/sesame-boot.sh"] and
-   command: ["node","server.mjs"]. Then: docker compose up -d --force-recreate.
-7. Verify and report ✅/❌:
-     - the gateway process is a child of `sesame launch` and `sesame-proxyd` is running;
-     - the gateway's /proc/<pid>/environ has HTTPS_PROXY + NODE_EXTRA_CA_CERTS and NO
-       LD_LIBRARY_PATH (read it as `docker exec -u node`, not plain exec);
-     - runuser -u node -- /data/.local/bin/sesame launch -- curl -s -o /dev/null -w '%{http_code}'
-       https://api.openai.com/v1/models  returns 200.
-8. Ask me to send a chat and approve the first call. If it returns {"detail":"Bad Request"}, a
-   brokered OAuth host (e.g. chatgpt.com/codex) is overriding the agent's auth — broker
-   api.openai.com and use provider: openai instead.
-```
+<Note>
+  **Running this with an agent?** Give it the steps above and have it run them in the container's App terminal — pausing for the browser approval at `sesame login`, and confirming step 5's `curl` returns `200`.
+</Note>
