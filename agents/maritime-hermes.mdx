@@ -52,17 +52,6 @@ maritime exec -- env HOME=/opt/data/home /opt/data/sesame/bin/sesame login --new
 
 It prints a `https://getsesame.dev/register?agent=<agent-id>` link. Approve it in the dashboard **within 15 minutes**.
 
-<Warning>
-  **Known broker bug — stale pending registrations.** If `sesame login --new` keeps returning the **same** agent id and the dashboard says the link is expired, unclaimed pending registrations aren't being cleaned up. Clear them and re-run login:
-
-  ```sql
-  DELETE FROM agents
-  WHERE user_id IS NULL AND status = 'pending' AND expires_at < now();
-  ```
-
-  Or wait for the broker fix, then re-run `sesame login --new`.
-</Warning>
-
 ---
 
 ## Step 3 — Mint the proxy key and build the trust bundle
