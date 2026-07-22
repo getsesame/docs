@@ -124,19 +124,43 @@ maritime env set HERMES_INFERENCE_MODEL=gpt-5.4
 
 ## Step 6 — Add a light boot wrap
 
-So `sesame-proxyd` starts and the env is sourced **before** Hermes on every boot, edit the container entrypoint (`/opt/hermes/docker/entrypoint.sh`). Just before it starts the dashboard/gateway, source the edge env and launch the static proxy:
+So `sesame-proxyd` starts and the env is sourced **before** Hermes on every boot, edit the container entrypoint (`/opt/hermes/docker/entrypoint.sh`) to insert the wrap just before its final `exec hermes "$@"` line.
+
+Run this from your machine — it edits the entrypoint in-container and is idempotent. Use `python3` (not `sed`): the entrypoint contains backticks that break `sed`.
 
 ```bash
-# --- Sesame edge wrap (added before Hermes starts) ---
-. /opt/data/sesame/edge-env.sh
+maritime exec <agent> -- python3 - <<'PY'
+path = "/opt/hermes/docker/entrypoint.sh"
+wrap = (
+    "# --- Sesame edge wrap ---\n"
+    ". /opt/data/sesame/edge-env.sh\n"
+    # Start proxyd with the *_PROXY vars stripped from ITS OWN env, so the
+    # proxy never tries to proxy its own broker calls. Default listen addr is
+    # 127.0.0.1:14322 (override with -addr if needed).
+    "env -u HTTPS_PROXY -u HTTP_PROXY -u ALL_PROXY "
+    "/opt/data/sesame/bin/sesame-proxyd --broker-url https://getsesame.dev &\n"
+    "# --- end Sesame edge wrap ---\n\n"
+)
+src = open(path).read()
+if "Sesame edge wrap" in src:
+    print("already wrapped")
+else:
+    src = src.replace('exec hermes "$@"', wrap + 'exec hermes "$@"', 1)
+    open(path, "w").write(src)
+    print("entrypoint wrapped")
+PY
+```
 
-# Start proxyd with the *_PROXY vars stripped from ITS OWN env,
-# so the proxy doesn't try to proxy its own broker calls:
+The resulting tail of the entrypoint looks like:
+
+```bash
+# --- Sesame edge wrap ---
+. /opt/data/sesame/edge-env.sh
 env -u HTTPS_PROXY -u HTTP_PROXY -u ALL_PROXY \
-  /opt/data/sesame/bin/sesame-proxyd \
-  --broker-url https://getsesame.dev \
-  --listen 127.0.0.1:14322 &
+  /opt/data/sesame/bin/sesame-proxyd --broker-url https://getsesame.dev &
 # --- end Sesame edge wrap ---
+
+exec hermes "$@"
 ```
 
 <Warning>
@@ -195,6 +219,6 @@ These are Maritime platform behaviors, **not** Sesame issues. They reproduce eve
   **`maritime exec` is intermittently flaky** — a `502 "Exec failed"` just means retry. Re-run the command.
 </Note>
 
-<Warning>
-  **A full Maritime redeploy wipes container image layers.** `/opt/data` and the env store persist, but the entrypoint edit and the installed binaries live in image layers — after a redeploy, **re-run the boot wrap (Step 6) and re-verify (Step 9).**
-</Warning>
+<Note>
+  **What survives a restart vs. a redeploy.** `/opt/data` is not a separate mounted volume — it's part of the container filesystem, same as `/opt/hermes`. On a **restart**, Maritime snapshots the whole filesystem into a derived image, so everything you installed (the binaries, `edge-env.sh`, the CA bundle, **and** the entrypoint edit) survives. A full **redeploy** rebuilds the image and resets that filesystem, so all of it is lost together — **re-run Steps 1–6** after a redeploy. The Maritime **env store** (Step 5) is separate and persists across both.
+</Note>
