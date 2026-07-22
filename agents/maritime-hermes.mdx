@@ -191,12 +191,6 @@ These are Maritime platform behaviors, **not** Sesame issues. They reproduce eve
   **`maritime chat` / `message` returns "isn't reachable" or "Method Not Allowed" after restarts.** Maritime re-points its port-forwarder to the Hermes dashboard (`:9119`) on restart. The reliable chat surface is the **Hermes dashboard itself**, or the api_server (`:8642`).
 </Warning>
 
-<Warning>
-  **Dashboard "events feed disconnected — tool calls may not appear."** The dashboard's session token rotates on every restart, so a browser tab left open across a restart holds a **stale token** and the WebSocket 403s.
-
-  **Fix:** hard-reload the dashboard (Cmd/Ctrl+Shift+R) or close and reopen the tab. Do **not** use the "Reconnect" button — it reuses the stale token. Rule of thumb: **after any restart, hard-reload the dashboard once.**
-</Warning>
-
 <Note>
   **`maritime exec` is intermittently flaky** — a `502 "Exec failed"` just means retry. Re-run the command.
 </Note>
