@@ -1,0 +1,52 @@
+---
+title: "sesame trust — Trust the Tenant Root OS-Wide"
+sidebarTitle: "Trust"
+description: "sesame trust installs your tenant root certificate into the OS trust store so tools that ignore SSL_CERT_FILE — Go binaries on macOS like gh, terraform, and kubectl — verify TLS behind the Sesame edge proxy."
+---
+
+`sesame trust` installs your tenant's root certificate into the operating system trust store. Run it once per machine, before (or after) `sesame launch` — it is idempotent.
+
+```bash
+sesame trust
+```
+
+## When you need it
+
+`sesame launch` establishes trust through environment variables (`SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, …), which covers Python, Node, curl, git — and Go programs **on Linux**.
+
+Anything that verifies against the **system trust store instead of those env vars** is the exception — most commonly Go programs on macOS (Go's darwin builds use the Security framework and silently ignore `SSL_CERT_FILE`), but also Electron apps and Swift/`URLSession` tools. Any such process routed through the edge proxy — `gh`, `terraform`, `kubectl`, Go- or binary-distributed **MCP servers** — fails like this on every brokered host until the tenant root is in the keychain:
+
+```text
+Post "https://api.github.com/graphql": tls: failed to verify certificate:
+x509: "Sesame Online Intermediate <tenant-id>" certificate is not trusted
+```
+
+If you see `x509: … certificate is not trusted` naming a **Sesame Online Intermediate**, this is that gap — run `sesame trust`.
+
+## What it does
+
+- **macOS** — adds the root to your **login keychain** with trust restricted to **SSL only** (never code signing). No sudo; macOS asks for your login password to confirm the trust-settings change.
+- **Linux** — copies the root into the distro's CA anchor directory and rebuilds the store (`update-ca-certificates` on Debian/Ubuntu, `update-ca-trust` on RHEL/Fedora). Needs root — when not run as root, it prints the exact `sudo` commands instead of executing.
+- **Java** (if a JDK is on PATH) — additionally imports the root into the default JVM keystore via `keytool -cacerts`, since JVMs consult neither the CA env vars nor the OS store. Best-effort: a read-only system JDK gets the `sudo` command printed instead.
+
+The root is **per-tenant** (self-hosted brokers each have their own), stable for 10 years, and only ever signs your own broker's short-lived per-host leaves.
+
+## Runtime coverage at a glance
+
+| Runtime | Covered by |
+|---|---|
+| Python (requests/httpx), Node, curl, git, Ruby | `sesame launch` env vars |
+| aws cli / boto3, Deno, pip, npm, cargo, gRPC SDKs | `sesame launch` env vars |
+| Go on macOS, Electron, Swift/`URLSession` | **`sesame trust`** (OS store) |
+| Go on Linux | env vars *or* `sesame trust` |
+| Java | **`sesame trust`** (JVM keystore step) |
+| Rust built with `webpki-roots` | **Not coverable** — roots are compiled into the binary; use `sesame request` for those tools |
+
+## Options
+
+```bash
+sesame trust --print       # show the commands without running them
+sesame trust --uninstall   # remove the root from the OS trust store
+```
+
+Restart any running Go tools after installing — they load trust once at process start.

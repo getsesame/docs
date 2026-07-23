@@ -32,7 +32,8 @@
               "cli/login",
               "cli/request",
               "cli/status",
-              "cli/hostnames"
+              "cli/hostnames",
+              "cli/trust"
             ]
           },
           {
