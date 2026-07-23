@@ -82,4 +82,5 @@ description: "Wrap any agent with `sesame launch` so every call to a brokered AP
 
 - **Approvals:** every brokered call prompts by default. For your **model host**, set an auto-approve (or long-window) policy so chat flows; keep **per-call approval on side-effecting hosts** (payments, deletes).
 - **Trust:** `sesame launch` appends the tenant root to your system CA bundle, so spliced (non-brokered) hosts keep verifying normally. If a non-brokered host suddenly fails TLS, check your CA env isn't being overridden elsewhere.
+- **Go tools on macOS:** Go's darwin builds verify TLS with the system keychain and **ignore `SSL_CERT_FILE`** — so `gh`, `terraform`, `kubectl`, and other Go binaries fail behind the proxy with `x509: "Sesame Online Intermediate …" certificate is not trusted` even under `sesame launch`. Run [`sesame trust`](/cli/trust) once per machine to install the tenant root into the keychain (SSL-only, no sudo).
 - **Verify it's keyless:** confirm the agent's credential store holds only placeholders (see per-agent guides).
