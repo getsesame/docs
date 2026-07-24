@@ -1,0 +1,224 @@
+---
+title: "Onboard a Maritime Hermes Agent to Run Keyless"
+sidebarTitle: "Maritime (Hermes)"
+description: "Wrap an existing Hermes-template Maritime agent so its LLM egress goes through your Sesame broker keyless — the OpenAI key lives only in Sesame, the container holds a placeholder, and the broker injects the credential per request with approval and audit."
+---
+
+[Maritime](https://maritime.sh) hosts agents — Hermes, OpenClaw, ZeroClaw — as managed microVMs. This page onboards an **existing Hermes-template Maritime agent** so its LLM egress runs through *your* Sesame broker, keyless: the real OpenAI key lives only in Sesame, the container holds a placeholder, and the broker injects the credential per request with approval and audit. There are **no agent code changes** — you install the Sesame edge components into the container, point Hermes at the brokered host, and add a light boot wrap.
+
+Unlike `sesame launch` on a box you own, a Maritime agent runs inside a managed container you reach through the `maritime` CLI. Two subcommands do the work:
+
+- `maritime exec` runs a command in-container.
+- `maritime env` is the encrypted env store whose values Maritime injects on every boot.
+
+<Note>
+  This procedure was validated live against a Hermes-template agent whose container is **Debian 13 / GLIBC 2.41 / x86_64**. The full Python `sesame` CLI runs fine there, and the Go edge proxy is fully static (no GLIBC dependency at all).
+</Note>
+
+## Prerequisites
+
+- The `maritime` CLI installed and logged in (a valid `MARITIME_TOKEN`).
+- A Sesame broker at [getsesame.dev](https://getsesame.dev) with a secret configured for `api.openai.com` (Bearer injection).
+- The target agent already created from the **`hermes`** template.
+
+---
+
+## Step 1 — Install the Sesame edge components in the container
+
+Install into the container's **persistent volume** (`/opt/data` survives restarts). Download the static `linux/amd64` builds from the public [`getsesame/sesame`](https://github.com/getsesame/sesame/releases) release:
+
+- `sesame-proxyd-linux-x86_64` — the Go edge proxy. Built `CGO_ENABLED=0`, fully static, so it has **no GLIBC dependency**.
+- `sesame-linux-x86_64.tar.gz` — the Python CLI tarball. Extract it into `/opt/data/sesame/bin`.
+
+```bash
+maritime exec -- mkdir -p /opt/data/sesame/bin
+maritime exec -- sh -c '
+  cd /opt/data/sesame/bin &&
+  curl -fsSL -o sesame-proxyd https://github.com/getsesame/sesame/releases/latest/download/sesame-proxyd-linux-x86_64 &&
+  chmod +x sesame-proxyd &&
+  curl -fsSL https://github.com/getsesame/sesame/releases/latest/download/sesame-linux-x86_64.tar.gz | tar -xz
+'
+```
+
+---
+
+## Step 2 — Give the container its own Sesame identity
+
+Run the device-flow login **in-container** so approvals attribute to the agent, not your laptop. Keep the identity on the persistent volume by pinning `HOME`:
+
+```bash
+maritime exec -- env HOME=/opt/data/home /opt/data/sesame/bin/sesame login --new
+```
+
+It prints a `https://getsesame.dev/register?agent=<agent-id>` link. Approve it in the dashboard **within 15 minutes**.
+
+---
+
+## Step 3 — Mint the proxy key and build the trust bundle
+
+Provision the proxy key and tenant CA for this identity:
+
+```bash
+maritime exec -- env HOME=/opt/data/home /opt/data/sesame/bin/sesame init
+```
+
+`init` writes the proxy key into the CLI config (`config.toml`) and provisions the tenant CA. Now build the container's trust bundle by fetching the tenant root with the proxy key and concatenating it with the system CA store:
+
+```bash
+maritime exec -- sh -c '
+  SESAME_PROXY_KEY=<PROXY_KEY> /opt/data/sesame/bin/sesame-proxyd ca \
+    --broker-url https://getsesame.dev > /opt/data/sesame/tenant-root.pem &&
+  cat /etc/ssl/certs/ca-certificates.crt /opt/data/sesame/tenant-root.pem \
+    > /opt/data/sesame/edge-ca-bundle.pem
+'
+```
+
+---
+
+## Step 4 — Write the edge-env file
+
+Write `/opt/data/sesame/edge-env.sh`. The agent process sources this to route its egress through the local proxy and trust the tenant CA.
+
+```bash
+# /opt/data/sesame/edge-env.sh
+export HTTPS_PROXY="http://<PROXY_KEY>:@127.0.0.1:14322"
+export HTTP_PROXY="http://<PROXY_KEY>:@127.0.0.1:14322"
+export ALL_PROXY="http://<PROXY_KEY>:@127.0.0.1:14322"
+
+# Never route Maritime's own control plane through the broker:
+export NO_PROXY="localhost,127.0.0.1,::1,.maritime.sh,maritime.sh,.tunnel.maritime.sh,.svc,.internal"
+
+export SSL_CERT_FILE="/opt/data/sesame/edge-ca-bundle.pem"
+export REQUESTS_CA_BUNDLE="/opt/data/sesame/edge-ca-bundle.pem"
+export CURL_CA_BUNDLE="/opt/data/sesame/edge-ca-bundle.pem"
+export NODE_EXTRA_CA_CERTS="/opt/data/sesame/edge-ca-bundle.pem"
+```
+
+The proxy key is the basic-auth **username**, with an **empty password** (note the trailing `:` before `@`). `NO_PROXY` must include loopback **and** Maritime's own hosts so the control plane is never brokered.
+
+<Warning>
+  **Embed the proxy key literally.** Write the value straight into the file. If you generate `edge-env.sh` with an **unquoted heredoc**, the shell expands `$PK` / `$HTTPS_PROXY` at write time and silently blanks the key — the file ends up with an empty proxy username, and every brokered request fails with a **407 "proxy auth"** error. Quote the heredoc delimiter (`<<'EOF'`) or write the literal key.
+</Warning>
+
+---
+
+## Step 5 — Point Hermes at the brokered host, durably
+
+Set the provider overrides through **Maritime env**, not `config.yaml`.
+
+<Warning>
+  Maritime **rewrites `config.yaml` from env on every boot**, so edits to `config.yaml` don't survive a restart. The env store is the only durable place to pin these.
+</Warning>
+
+```bash
+maritime env set OPENAI_BASE_URL=https://api.openai.com/v1
+maritime env set OPENROUTER_BASE_URL=https://api.openai.com/v1
+maritime env set HERMES_INFERENCE_PROVIDER=openrouter
+maritime env set HERMES_TUI_PROVIDER=openrouter
+maritime env set HERMES_INFERENCE_MODEL=gpt-5.4
+```
+
+**Why this is the root lever.** The Hermes template ships pointed at Maritime's built-in LLM gateway (`api.maritime.sh/api/llm/v1` with an injected `mllm_` key), which **bypasses Sesame entirely**. Overriding `OPENAI_BASE_URL` to `api.openai.com` is what routes the LLM through the broker. The container's `OPENAI_API_KEY` can stay a **placeholder** — the broker overwrites the `Authorization` header server-side.
+
+---
+
+## Step 6 — Add a light boot wrap
+
+So `sesame-proxyd` starts and the env is sourced **before** Hermes on every boot, edit the container entrypoint (`/opt/hermes/docker/entrypoint.sh`) to insert the wrap just before its final `exec hermes "$@"` line.
+
+Run this from your machine — it edits the entrypoint in-container and is idempotent. Use `python3` (not `sed`): the entrypoint contains backticks that break `sed`.
+
+```bash
+maritime exec <agent> -- python3 - <<'PY'
+path = "/opt/hermes/docker/entrypoint.sh"
+wrap = (
+    "# --- Sesame edge wrap ---\n"
+    ". /opt/data/sesame/edge-env.sh\n"
+    # Start proxyd with the *_PROXY vars stripped from ITS OWN env, so the
+    # proxy never tries to proxy its own broker calls. Default listen addr is
+    # 127.0.0.1:14322 (override with -addr if needed).
+    "env -u HTTPS_PROXY -u HTTP_PROXY -u ALL_PROXY "
+    "/opt/data/sesame/bin/sesame-proxyd --broker-url https://getsesame.dev &\n"
+    "# --- end Sesame edge wrap ---\n\n"
+)
+src = open(path).read()
+if "Sesame edge wrap" in src:
+    print("already wrapped")
+else:
+    src = src.replace('exec hermes "$@"', wrap + 'exec hermes "$@"', 1)
+    open(path, "w").write(src)
+    print("entrypoint wrapped")
+PY
+```
+
+The resulting tail of the entrypoint looks like:
+
+```bash
+# --- Sesame edge wrap ---
+. /opt/data/sesame/edge-env.sh
+env -u HTTPS_PROXY -u HTTP_PROXY -u ALL_PROXY \
+  /opt/data/sesame/bin/sesame-proxyd --broker-url https://getsesame.dev &
+# --- end Sesame edge wrap ---
+
+exec hermes "$@"
+```
+
+<Warning>
+  **Keep it a light wrap** — source the env and start the static `sesame-proxyd`, nothing more. Do **not** wrap the agent under a resident `sesame launch` supervisor process inside the Maritime container; that was observed to **crash the microVM**.
+</Warning>
+
+---
+
+## Step 7 — Restart the agent
+
+Restart once so Hermes boots with the proxy env and the pinned provider:
+
+```bash
+maritime restart
+```
+
+---
+
+## Step 8 — Grant standing authorization
+
+On the first LLM call the broker prompts for approval. Approve it with **No expiry** — not a timed grant.
+
+<Warning>
+  The LLM is called on **every turn**. A short timed grant expires within minutes, and each lapse re-prompts or fails mid-conversation. A **No-expiry** grant makes `get_active_authorization` return instantly (~2s calls, no prompts) and keeps the agent keyless.
+</Warning>
+
+---
+
+## Step 9 — Verify
+
+Confirm the whole chain end to end:
+
+```bash
+# 1. Egress through the proxy — broker injects the key, expect HTTP 200
+maritime exec -- sh -c '. /opt/data/sesame/edge-env.sh && curl -s -o /dev/null -w "%{http_code}\n" https://api.openai.com/v1/models'
+
+# 2. Hermes api_server returns a real completion
+maritime exec -- curl -s -X POST http://127.0.0.1:8642/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gpt-5.4","messages":[{"role":"user","content":"ping"}]}'
+```
+
+Then open the [getsesame.dev](https://getsesame.dev) audit log — you should see **Proxy Request** events for `api.openai.com` under the **agent's own identity**.
+
+---
+
+## Known issues
+
+These are Maritime platform behaviors, **not** Sesame issues. They reproduce even on a pristine agent with no Sesame changes.
+
+<Warning>
+  **`maritime chat` / `message` returns "isn't reachable" or "Method Not Allowed" after restarts.** Maritime re-points its port-forwarder to the Hermes dashboard (`:9119`) on restart. The reliable chat surface is the **Hermes dashboard itself**, or the api_server (`:8642`).
+</Warning>
+
+<Note>
+  **`maritime exec` is intermittently flaky** — a `502 "Exec failed"` just means retry. Re-run the command.
+</Note>
+
+<Note>
+  **What survives a restart vs. a redeploy.** `/opt/data` is not a separate mounted volume — it's part of the container filesystem, same as `/opt/hermes`. On a **restart**, Maritime snapshots the whole filesystem into a derived image, so everything you installed (the binaries, `edge-env.sh`, the CA bundle, **and** the entrypoint edit) survives. A full **redeploy** rebuilds the image and resets that filesystem, so all of it is lost together — **re-run Steps 1–6** after a redeploy. The Maritime **env store** (Step 5) is separate and persists across both.
+</Note>
