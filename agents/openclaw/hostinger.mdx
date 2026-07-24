@@ -60,13 +60,15 @@ cd /docker/<app> && docker compose up -d --force-recreate
 
 In [getsesame.dev](https://getsesame.dev) → **Secrets → Add**, add a secret for **each host your agent calls** — the preset fills the injection mode. Set an **auto-approve policy** on your model host so chat doesn't pause every turn; keep per-call approval on side-effecting hosts.
 
-Confirm a brokered call succeeds, using any host you added a secret for:
+Confirm a brokered call succeeds. Pick a host you've **confirmed has a valid secret** — the check only proves injection for that specific host:
 
 ```bash
 # hit a read-only endpoint on a brokered host; 200 means the key was injected
 runuser -u node -- /data/.local/bin/sesame launch -- \
   curl -s -o /dev/null -w '%{http_code}\n' https://<host>/<read-endpoint>
 ```
+
+A `401`/`403` here means the broker injected a key the host rejected — the secret for that host is missing or invalid — **not** that the wrapper is broken. Fix that host's secret, or test against a different host you know is good.
 
 Then send a chat in OpenClaw and approve the first call. The reply arrives with your real key injected server-side — OpenClaw never sees it.
 
@@ -77,6 +79,7 @@ Then send a chat in OpenClaw and approve the first call. The reply arrives with 
 | `sesame login` → `PermissionError: '/data/.config/sesame'` | `/data/.config` is root-owned on a fresh box. Re-run step 1's `chown -R node:node /data/.config /data/.local`, then retry. |
 | Chat returns `{"detail":"Bad Request"}` | A brokered OAuth host (e.g. `chatgpt.com` via codex) is overriding the agent's own auth. Broker the host the agent actually calls and point its provider there, not the codex path. |
 | OpenClaw is unwrapped after a change | A container **recreate** (a panel env-var edit, an image pull) wipes the container's writable layer — but the `/data` install + compose `entrypoint` above bring it back up wrapped on their own. Re-confirm with step 4. |
+| Step 4 returns `401`/`403` | The wrapper is working — the host rejected its key. That host's secret is missing or invalid in **Secrets**. Re-add it, or verify against a different host you know is good. |
 
 <Note>
   **Running this with an agent?** Give it the steps above and have it run them in the container's App terminal — pausing for the browser approval at `sesame login`, and confirming step 4's brokered call returns `200`.
